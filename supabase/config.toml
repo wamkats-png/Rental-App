@@ -1,0 +1,14 @@
+# Supabase Local Development Configuration
+# This file configures the local Supabase instance and auth settings
+
+[auth]
+# Enable leaked password protection using HaveIBeenPwned API
+enable_password_check = true
+
+# Use percentage-based connection allocation for better scalability
+# This allows the Auth server to scale automatically with instance size
+[auth.pool]
+# Set to percentage mode (default is fixed)
+mode = "percentage"
+# Allocate 10% of available connections to Auth server
+percentage = 10

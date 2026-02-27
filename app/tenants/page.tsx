@@ -1,0 +1,227 @@
+'use client';
+
+import { useState } from 'react';
+import { useApp } from '../context/AppContext';
+import { formatDate } from '../lib/utils';
+import { exportToCSV } from '../lib/csvExport';
+import { CommPreference, CommunicationType } from '../types';
+
+const COMM_PREFS: CommPreference[] = ['WhatsApp', 'Email', 'SMS'];
+const COMM_TYPES: CommunicationType[] = ['SMS', 'Email', 'Call', 'WhatsApp'];
+
+const defaultForm = {
+  full_name: '', phone: '', email: '', national_id: '', address: '', comm_preference: 'WhatsApp' as CommPreference,
+};
+
+export default function TenantsPage() {
+  const { tenants, addTenant, updateTenant, deleteTenant, communicationLogs, addCommunicationLog } = useApp();
+  const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(defaultForm);
+  const [search, setSearch] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
+  const [commForm, setCommForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'WhatsApp' as CommunicationType, note: '' });
+
+  const filtered = tenants.filter(t =>
+    t.full_name.toLowerCase().includes(search.toLowerCase()) ||
+    t.phone.includes(search) ||
+    t.email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const openAdd = () => { setEditingId(null); setForm(defaultForm); setShowModal(true); };
+  const openEdit = (t: typeof tenants[0]) => {
+    setEditingId(t.id);
+    setForm({ full_name: t.full_name, phone: t.phone, email: t.email, national_id: t.national_id, address: t.address, comm_preference: t.comm_preference });
+    setShowModal(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.full_name) return;
+    if (editingId) {
+      updateTenant(editingId, form);
+    } else {
+      addTenant(form);
+    }
+    setShowModal(false); setEditingId(null); setForm(defaultForm);
+  };
+
+  const handleDelete = (id: string) => {
+    deleteTenant(id);
+    setDeleteConfirmId(null);
+    if (selectedTenant === id) setSelectedTenant(null);
+  };
+
+  const handleCommSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenant || !commForm.note) return;
+    addCommunicationLog({ tenant_id: selectedTenant, date: commForm.date, type: commForm.type, note: commForm.note });
+    setCommForm({ date: new Date().toISOString().split('T')[0], type: 'WhatsApp', note: '' });
+  };
+
+  const handleExport = () => {
+    exportToCSV(tenants.map(t => ({
+      Name: t.full_name, Phone: t.phone, Email: t.email,
+      National_ID: t.national_id, Address: t.address, Preference: t.comm_preference,
+    })), 'tenants');
+  };
+
+  const tenantLogs = selectedTenant
+    ? communicationLogs.filter(c => c.tenant_id === selectedTenant).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : [];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Tenants</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage tenants and communication</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleExport} className="bg-gray-100 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-200 transition font-medium text-sm">Export CSV</button>
+          <button onClick={openAdd} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">+ Add Tenant</button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, phone, or email..." className="w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className={selectedTenant ? 'lg:col-span-2' : 'lg:col-span-3'}>
+          {filtered.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-12 text-center">
+              <p className="text-gray-500 text-lg">{tenants.length === 0 ? 'No tenants yet.' : 'No tenants match search.'}</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Name</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Phone</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Email</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">National ID</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Pref</th>
+                    <th className="text-right py-3 px-4 font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(t => (
+                    <tr key={t.id} className={`border-b border-gray-50 hover:bg-gray-50 cursor-pointer ${selectedTenant === t.id ? 'bg-blue-50' : ''}`} onClick={() => setSelectedTenant(selectedTenant === t.id ? null : t.id)}>
+                      <td className="py-3 px-4 font-medium">{t.full_name}</td>
+                      <td className="py-3 px-4">{t.phone}</td>
+                      <td className="py-3 px-4 text-gray-600">{t.email}</td>
+                      <td className="py-3 px-4 text-xs text-gray-500">{t.national_id}</td>
+                      <td className="py-3 px-4"><span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{t.comm_preference}</span></td>
+                      <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openEdit(t)} className="text-blue-600 hover:text-blue-800 text-sm mr-2">Edit</button>
+                        {deleteConfirmId === t.id ? (
+                          <>
+                            <button onClick={() => handleDelete(t.id)} className="bg-red-600 text-white px-2 py-1 rounded text-xs mr-1">Yes</button>
+                            <button onClick={() => setDeleteConfirmId(null)} className="text-gray-600 text-xs">No</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setDeleteConfirmId(t.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {selectedTenant && (
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b">
+              <h3 className="font-semibold text-gray-800">Communication Log</h3>
+              <p className="text-sm text-gray-500">{tenants.find(t => t.id === selectedTenant)?.full_name}</p>
+            </div>
+            <form onSubmit={handleCommSubmit} className="p-4 border-b space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={commForm.date} onChange={e => setCommForm({ ...commForm, date: e.target.value })} className="border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500" />
+                <select value={commForm.type} onChange={e => setCommForm({ ...commForm, type: e.target.value as CommunicationType })} className="border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500">
+                  {COMM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <textarea value={commForm.note} onChange={e => setCommForm({ ...commForm, note: e.target.value })} placeholder="Add note..." rows={2} className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500" />
+              <button type="submit" className="w-full bg-blue-600 text-white py-1.5 rounded text-sm hover:bg-blue-700">Add Log</button>
+            </form>
+            <div className="p-4 max-h-80 overflow-y-auto">
+              {tenantLogs.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center">No communication logs yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {tenantLogs.map(log => (
+                    <div key={log.id} className="border-b border-gray-50 pb-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          log.type === 'Call' ? 'bg-green-100 text-green-700' :
+                          log.type === 'SMS' ? 'bg-blue-100 text-blue-700' :
+                          log.type === 'Email' ? 'bg-purple-100 text-purple-700' :
+                          'bg-emerald-100 text-emerald-700'
+                        }`}>{log.type}</span>
+                        <span className="text-xs text-gray-400">{formatDate(log.date)}</span>
+                      </div>
+                      <p className="text-sm text-gray-700">{log.note}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-bold text-gray-800">{editingId ? 'Edit Tenant' : 'Add Tenant'}</h2>
+              <button onClick={() => { setShowModal(false); setEditingId(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="John Doe" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="+256 700 000 000" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="email@example.com" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">National ID</label>
+                  <input type="text" value={form.national_id} onChange={e => setForm({ ...form, national_id: e.target.value })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="CM12345678ABCD" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Comm Preference</label>
+                  <select value={form.comm_preference} onChange={e => setForm({ ...form, comm_preference: e.target.value as CommPreference })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    {COMM_PREFS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input type="text" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Current address" />
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button type="button" onClick={() => { setShowModal(false); setEditingId(null); }} className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+                <button type="submit" className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 font-medium">{editingId ? 'Update' : 'Add Tenant'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
