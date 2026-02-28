@@ -1,6 +1,7 @@
 const express = require('express');
 const authRoutes = require('./routes/auth');
 const rentalRoutes = require('./routes/rentals');
+const aiInputRoutes = require('./routes/aiInput');
 const { authenticate } = require('./middleware/auth');
 
 const app = express();
@@ -12,6 +13,7 @@ app.use('/auth', authRoutes);
 
 // --- Protected routes (require valid access token) ---
 app.use('/rentals', rentalRoutes);
+app.use('/ai-input', aiInputRoutes); // Free AI input — no paywall
 
 app.get('/me', authenticate, (req, res) => {
   res.json({ user: req.user });
