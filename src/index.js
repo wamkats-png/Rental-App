@@ -1,5 +1,6 @@
 const express = require('express');
 const authRoutes = require('./routes/auth');
+const rentalRoutes = require('./routes/rentals');
 const { authenticate } = require('./middleware/auth');
 
 const app = express();
@@ -10,6 +11,8 @@ app.use(express.json());
 app.use('/auth', authRoutes);
 
 // --- Protected routes (require valid access token) ---
+app.use('/rentals', rentalRoutes);
+
 app.get('/me', authenticate, (req, res) => {
   res.json({ user: req.user });
 });
