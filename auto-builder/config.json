@@ -1,0 +1,89 @@
+{
+  "project": "RentFlow Uganda",
+  "version": "2.0.0",
+  "operator": {
+    "name": "Wamala Julius",
+    "email": "wamkats@gmail.com",
+    "github": "wamkats-png",
+    "consent": "Operator has granted full consent for email use in dev, testing, deployment, and service registration for this application."
+  },
+  "autonomy": {
+    "mode": "FULLY_AUTONOMOUS",
+    "requireHumanApproval": false,
+    "requireHumanInput": false,
+    "stopOnError": false,
+    "maxRetryAttempts": 3,
+    "continueOnBlockedItem": true
+  },
+  "safety": {
+    "nonDestructiveMode": true,
+    "backupBeforeWrite": true,
+    "softDeleteOnly": true,
+    "backupDir": "./backups",
+    "archiveDir": "./archive",
+    "logDir": "./logs"
+  },
+  "appContext": {
+    "domain": "Property management — Uganda",
+    "currency": "UGX",
+    "currencyStorage": "integers_only",
+    "fiscalYear": "July_to_June",
+    "taxRates": {
+      "individual": "12%",
+      "company": "30%"
+    },
+    "payments": ["MTN Mobile Money", "Airtel Money"],
+    "sms": "Africa's Talking",
+    "targetUsers": "Ugandan landlords and property managers",
+    "primaryDevice": "mobile"
+  },
+  "stack": {
+    "frontend": "Next.js 14.1 (App Router)",
+    "language": "TypeScript (strict)",
+    "database": "Supabase (PostgreSQL + Auth + Storage)",
+    "styling": "TailwindCSS",
+    "ai": "Anthropic Claude API",
+    "deployment": "Vercel",
+    "forms": "React Hook Form + Zod",
+    "state": "Zustand",
+    "charts": "Recharts",
+    "pdf": "jsPDF",
+    "dates": "date-fns",
+    "smsProvider": "Africa's Talking",
+    "emailProvider": "Resend"
+  },
+  "workingDirectory": "C:\\Users\\wamka\\Claude Creations\\rentflow-uganda\\",
+  "supabaseUrl": "https://vnclmjqifdughdfysvgf.supabase.co",
+  "phases": [
+    {
+      "id": 1,
+      "name": "Quick Wins",
+      "estimatedDays": "1-2",
+      "items": ["dark-mode", "tax-pdf", "duplicate-lease", "late-fee", "dashboard-filter"]
+    },
+    {
+      "id": 2,
+      "name": "Core Business",
+      "estimatedDays": "3-4",
+      "items": ["expense-tracking", "rent-escalation", "comm-templates", "bulk-actions", "csv-import"]
+    },
+    {
+      "id": 3,
+      "name": "Integrations",
+      "estimatedDays": "3-4",
+      "items": ["africastalking-sms", "auto-reminders", "bank-reconciliation"]
+    },
+    {
+      "id": 4,
+      "name": "Analytics",
+      "estimatedDays": "3-4",
+      "items": ["occupancy-analytics", "revenue-forecasting", "maintenance-tracking", "tenant-scoring"]
+    },
+    {
+      "id": 5,
+      "name": "Multi-User Architecture",
+      "estimatedDays": "4-5",
+      "items": ["role-system", "team-invitations", "audit-log", "subscription-gating", "whitelabel-prep"]
+    }
+  ]
+}

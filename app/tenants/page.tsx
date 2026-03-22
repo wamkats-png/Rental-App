@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatDate } from '../lib/utils';
+import { formatDate, calculateTenantScore } from '../lib/utils';
+import Toast from '../components/Toast';
 import { exportToCSV } from '../lib/csvExport';
 import { CommPreference, CommunicationType } from '../types';
 
@@ -14,7 +15,7 @@ const defaultForm = {
 };
 
 export default function TenantsPage() {
-  const { tenants, addTenant, updateTenant, deleteTenant, communicationLogs, addCommunicationLog } = useApp();
+  const { tenants, addTenant, updateTenant, deleteTenant, communicationLogs, addCommunicationLog, payments, leases } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
@@ -22,6 +23,7 @@ export default function TenantsPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
   const [commForm, setCommForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'WhatsApp' as CommunicationType, note: '' });
+  const [toast, setToast] = useState('');
 
   const filtered = tenants.filter(t =>
     t.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -45,6 +47,7 @@ export default function TenantsPage() {
       addTenant(form);
     }
     setShowModal(false); setEditingId(null); setForm(defaultForm);
+    setToast(editingId ? 'Tenant updated successfully' : 'Tenant added successfully');
   };
 
   const handleDelete = (id: string) => {
@@ -73,14 +76,15 @@ export default function TenantsPage() {
 
   return (
     <div>
+      {toast && <Toast message={toast} onDismiss={() => setToast('')} />}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Tenants</h1>
           <p className="text-sm text-gray-500 mt-1">Manage tenants and communication</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleExport} className="bg-gray-100 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-200 transition font-medium text-sm">Export CSV</button>
-          <button onClick={openAdd} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">+ Add Tenant</button>
+          <button onClick={handleExport} className="bg-gray-100 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-200 transition font-medium text-sm hidden sm:block">Export CSV</button>
+          <button onClick={openAdd} className="bg-blue-600 text-white px-4 sm:px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm sm:text-base">+ Add Tenant</button>
         </div>
       </div>
 
@@ -95,50 +99,110 @@ export default function TenantsPage() {
               <p className="text-gray-500 text-lg">{tenants.length === 0 ? 'No tenants yet.' : 'No tenants match search.'}</p>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-gray-50">
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Name</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Phone</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Email</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">National ID</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Pref</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(t => (
-                    <tr key={t.id} className={`border-b border-gray-50 hover:bg-gray-50 cursor-pointer ${selectedTenant === t.id ? 'bg-blue-50' : ''}`} onClick={() => setSelectedTenant(selectedTenant === t.id ? null : t.id)}>
-                      <td className="py-3 px-4 font-medium">{t.full_name}</td>
-                      <td className="py-3 px-4">{t.phone}</td>
-                      <td className="py-3 px-4 text-gray-600">{t.email}</td>
-                      <td className="py-3 px-4 text-xs text-gray-500">{t.national_id}</td>
-                      <td className="py-3 px-4"><span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{t.comm_preference}</span></td>
-                      <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => openEdit(t)} className="text-blue-600 hover:text-blue-800 text-sm mr-2">Edit</button>
-                        {deleteConfirmId === t.id ? (
-                          <>
-                            <button onClick={() => handleDelete(t.id)} className="bg-red-600 text-white px-2 py-1 rounded text-xs mr-1">Yes</button>
-                            <button onClick={() => setDeleteConfirmId(null)} className="text-gray-600 text-xs">No</button>
-                          </>
-                        ) : (
-                          <button onClick={() => setDeleteConfirmId(t.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
-                        )}
-                      </td>
+            <>
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {filtered.map(t => (
+                  <div
+                    key={t.id}
+                    className={`bg-white rounded-lg shadow p-4 cursor-pointer transition-colors ${selectedTenant === t.id ? 'ring-2 ring-blue-500' : ''}`}
+                    onClick={() => setSelectedTenant(selectedTenant === t.id ? null : t.id)}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-gray-800">{t.full_name}</p>
+                        <p className="text-sm text-gray-600">{t.phone}</p>
+                        <p className="text-xs text-gray-400 truncate">{t.email}</p>
+                      </div>
+                      <span className="px-2 py-0.5 bg-gray-100 rounded text-xs ml-3 shrink-0">{t.comm_preference}</span>
+                    </div>
+                    {t.national_id && <p className="text-xs text-gray-400 mb-3">ID: {t.national_id}</p>}
+                    <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => openEdit(t)} className="text-blue-600 text-sm font-medium">Edit</button>
+                      {deleteConfirmId === t.id ? (
+                        <>
+                          <button onClick={() => handleDelete(t.id)} className="bg-red-600 text-white px-2 py-1 rounded text-xs">Yes, delete</button>
+                          <button onClick={() => setDeleteConfirmId(null)} className="text-gray-600 text-xs">Cancel</button>
+                        </>
+                      ) : (
+                        <button onClick={() => setDeleteConfirmId(t.id)} className="text-red-600 text-sm font-medium">Delete</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden md:block bg-white rounded-lg shadow overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Name</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Phone</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Email</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">National ID</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Pref</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-600">Score</th>
+                      <th className="text-right py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filtered.map(t => (
+                      <tr key={t.id} className={`border-b border-gray-50 hover:bg-gray-50 cursor-pointer ${selectedTenant === t.id ? 'bg-blue-50' : ''}`} onClick={() => setSelectedTenant(selectedTenant === t.id ? null : t.id)}>
+                        <td className="py-3 px-4 font-medium">{t.full_name}</td>
+                        <td className="py-3 px-4">{t.phone}</td>
+                        <td className="py-3 px-4 text-gray-600">{t.email}</td>
+                        <td className="py-3 px-4 text-xs text-gray-500">{t.national_id}</td>
+                        <td className="py-3 px-4"><span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{t.comm_preference}</span></td>
+                        <td className="py-3 px-4">
+                          {(() => {
+                            const { score, grade, label } = calculateTenantScore(t.id, payments, leases);
+                            if (score === 0) return <span className="text-xs text-gray-400">—</span>;
+                            const cls = grade === 'A' ? 'bg-green-100 text-green-700' : grade === 'B' ? 'bg-blue-100 text-blue-700' : grade === 'C' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700';
+                            return <span className={`px-2 py-0.5 rounded text-xs font-bold ${cls}`} title={label}>{grade} {score}</span>;
+                          })()}
+                        </td>
+                        <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => openEdit(t)} className="text-blue-600 hover:text-blue-800 text-sm mr-2">Edit</button>
+                          {deleteConfirmId === t.id ? (
+                            <>
+                              <button onClick={() => handleDelete(t.id)} className="bg-red-600 text-white px-2 py-1 rounded text-xs mr-1">Yes</button>
+                              <button onClick={() => setDeleteConfirmId(null)} className="text-gray-600 text-xs">No</button>
+                            </>
+                          ) : (
+                            <button onClick={() => setDeleteConfirmId(t.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
         {selectedTenant && (
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b">
-              <h3 className="font-semibold text-gray-800">Communication Log</h3>
-              <p className="text-sm text-gray-500">{tenants.find(t => t.id === selectedTenant)?.full_name}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800">Communication Log</h3>
+                  <p className="text-sm text-gray-500">{tenants.find(t => t.id === selectedTenant)?.full_name}</p>
+                </div>
+                {(() => {
+                  const { score, grade, label } = calculateTenantScore(selectedTenant, payments, leases);
+                  if (score === 0) return null;
+                  const cls = grade === 'A' ? 'bg-green-100 text-green-700 border-green-200' : grade === 'B' ? 'bg-blue-100 text-blue-700 border-blue-200' : grade === 'C' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200';
+                  return (
+                    <div className={`text-center px-3 py-1 rounded-lg border ${cls}`}>
+                      <p className="text-lg font-bold">{grade}</p>
+                      <p className="text-xs">{score}/100</p>
+                      <p className="text-xs opacity-75">{label}</p>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
             <form onSubmit={handleCommSubmit} className="p-4 border-b space-y-3">
               <div className="grid grid-cols-2 gap-2">

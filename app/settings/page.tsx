@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../components/AuthProvider';
+import { useTheme } from '../components/ThemeProvider';
 
 export default function SettingsPage() {
   const { landlord, updateLandlord } = useApp();
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -50,7 +53,7 @@ export default function SettingsPage() {
   const labelClasses = 'block text-sm font-medium text-gray-700 mb-1.5';
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Page Header */}
         <div>
@@ -61,7 +64,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Profile Settings Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 text-blue-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,8 +72,8 @@ export default function SettingsPage() {
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Profile Settings</h2>
-              <p className="text-sm text-gray-500">Update your landlord profile information.</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Profile Settings</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Update your landlord profile information.</p>
             </div>
           </div>
 
@@ -166,7 +169,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Account Information Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 text-blue-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -174,8 +177,8 @@ export default function SettingsPage() {
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Account Information</h2>
-              <p className="text-sm text-gray-500">Your account details and subscription status.</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Account Information</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Your account details and subscription status.</p>
             </div>
           </div>
 
@@ -205,8 +208,42 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Appearance Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900/40 text-purple-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Appearance</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Toggle between light and dark mode.</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Dark Mode</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Currently: {theme === 'dark' ? 'On' : 'Off'}</p>
+            </div>
+            <button
+              onClick={toggleTheme}
+              className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                theme === 'dark' ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+              aria-label="Toggle dark mode"
+            >
+              <span
+                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  theme === 'dark' ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
         {/* Data Management Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-red-100 text-red-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,8 +251,8 @@ export default function SettingsPage() {
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Data Management</h2>
-              <p className="text-sm text-gray-500">Manage your locally stored application data.</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Data Management</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Manage your locally stored application data.</p>
             </div>
           </div>
 
@@ -269,8 +306,60 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* Auto Reminders Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-orange-100 text-orange-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Auto Reminders</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Scheduled SMS reminders via Africa&apos;s Talking. Configure days-before triggers and cron setup.</p>
+              </div>
+            </div>
+            <Link
+              href="/settings/reminders"
+              className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 transition-colors"
+            >
+              Configure
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
+        </div>
+
+        {/* Message Templates Card */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-green-100 text-green-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Message Templates</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Reusable templates for rent reminders, receipts, and notices.</p>
+              </div>
+            </div>
+            <Link
+              href="/settings/templates"
+              className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+            >
+              Manage Templates
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
+        </div>
+
         {/* About Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 text-blue-600">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -278,8 +367,8 @@ export default function SettingsPage() {
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">About</h2>
-              <p className="text-sm text-gray-500">Application information.</p>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">About</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Application information.</p>
             </div>
           </div>
 

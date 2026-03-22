@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatUGX, formatDate, daysUntil } from '../lib/utils';
+import Toast from '../components/Toast';
 import { ContractType, PaymentFrequency, UtilitiesResponsibility, LeaseStatus } from '../types';
 
 const CONTRACT_TYPES: ContractType[] = ['Residential', 'Commercial', 'Other'];
@@ -23,12 +24,26 @@ function statusColor(s: LeaseStatus) {
   }
 }
 
+const ESCALATION_FREQUENCIES = ['Yearly', '2 Years'] as const;
+
+function computeNextReview(startDate: string, freq: string): string {
+  if (!startDate) return '';
+  const d = new Date(startDate);
+  d.setFullYear(d.getFullYear() + (freq === '2 Years' ? 2 : 1));
+  return d.toISOString().split('T')[0];
+}
+
 const defaultForm = {
   property_id: '', unit_id: '', tenant_id: '', contract_type: 'Residential' as ContractType,
   rent_amount: 0, payment_frequency: 'Monthly' as PaymentFrequency, currency: 'UGX',
   start_date: '', end_date: '', due_day: 1, grace_period_days: 5, deposit_amount: 0,
   utilities_responsibility: 'Tenant' as UtilitiesResponsibility, notice_period_days: 30,
   status: 'Draft' as LeaseStatus,
+  late_fee_type: 'percentage' as 'percentage' | 'flat',
+  late_fee_rate: 0,
+  escalation_rate: 0,
+  escalation_frequency: 'Yearly' as 'Yearly' | '2 Years',
+  next_review_date: '',
 };
 
 export default function LeasesPage() {
@@ -38,11 +53,31 @@ export default function LeasesPage() {
   const [form, setForm] = useState(defaultForm);
   const [filterStatus, setFilterStatus] = useState<LeaseStatus | 'All'>('All');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState('');
 
   const filtered = filterStatus === 'All' ? leases : leases.filter(l => l.status === filterStatus);
   const unitsForProperty = units.filter(u => u.property_id === form.property_id);
 
   const openAdd = () => { setEditingId(null); setForm(defaultForm); setShowModal(true); };
+  const handleDuplicate = (l: typeof leases[0]) => {
+    setEditingId(null);
+    setForm({
+      property_id: l.property_id, unit_id: l.unit_id, tenant_id: l.tenant_id,
+      contract_type: l.contract_type, rent_amount: l.rent_amount, payment_frequency: l.payment_frequency,
+      currency: l.currency, start_date: '', end_date: '', due_day: l.due_day,
+      grace_period_days: l.grace_period_days, deposit_amount: l.deposit_amount,
+      utilities_responsibility: l.utilities_responsibility, notice_period_days: l.notice_period_days,
+      status: 'Draft' as const,
+      late_fee_type: l.late_fee_type ?? 'percentage',
+      late_fee_rate: l.late_fee_rate ?? 0,
+      escalation_rate: l.escalation_rate ?? 0,
+      escalation_frequency: l.escalation_frequency ?? 'Yearly',
+      next_review_date: '',
+    });
+    setShowModal(true);
+    setToast('Lease duplicated — update dates before saving');
+  };
   const openEdit = (l: typeof leases[0]) => {
     setEditingId(l.id);
     setForm({
@@ -52,33 +87,59 @@ export default function LeasesPage() {
       grace_period_days: l.grace_period_days, deposit_amount: l.deposit_amount,
       utilities_responsibility: l.utilities_responsibility, notice_period_days: l.notice_period_days,
       status: l.status,
+      late_fee_type: l.late_fee_type ?? 'percentage',
+      late_fee_rate: l.late_fee_rate ?? 0,
+      escalation_rate: l.escalation_rate ?? 0,
+      escalation_frequency: l.escalation_frequency ?? 'Yearly',
+      next_review_date: l.next_review_date ?? '',
     });
     setShowModal(true);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setForm(prev => ({
-      ...prev,
-      [name]: ['rent_amount', 'deposit_amount', 'due_day', 'grace_period_days', 'notice_period_days'].includes(name) ? Number(value) : value,
-      ...(name === 'property_id' ? { unit_id: '' } : {}),
-    }));
+    setForm(prev => {
+      const updated = {
+        ...prev,
+        [name]: ['rent_amount', 'deposit_amount', 'due_day', 'grace_period_days', 'notice_period_days', 'late_fee_rate', 'escalation_rate'].includes(name) ? Number(value) : value,
+        ...(name === 'property_id' ? { unit_id: '' } : {}),
+      };
+      // Auto-compute next_review_date when start_date or escalation_frequency changes
+      if ((name === 'start_date' || name === 'escalation_frequency') && updated.escalation_rate > 0) {
+        updated.next_review_date = computeNextReview(
+          name === 'start_date' ? value : prev.start_date,
+          name === 'escalation_frequency' ? value : prev.escalation_frequency
+        );
+      }
+      return updated;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!form.property_id || !form.unit_id || !form.tenant_id || !form.start_date || !form.end_date) return;
-
-    if (editingId) {
-      const old = leases.find(l => l.id === editingId);
-      updateLease(editingId, form);
-      if (old?.status !== 'Active' && form.status === 'Active') updateUnit(form.unit_id, { status: 'Occupied' });
-      if (old?.status !== 'Terminated' && form.status === 'Terminated') updateUnit(form.unit_id, { status: 'Available' });
-    } else {
-      addLease(form);
-      if (form.status === 'Active') updateUnit(form.unit_id, { status: 'Occupied' });
+    if (new Date(form.end_date) <= new Date(form.start_date)) {
+      alert('End date must be after start date.');
+      return;
     }
-    setShowModal(false); setEditingId(null); setForm(defaultForm);
+
+    setSubmitting(true);
+    try {
+      if (editingId) {
+        const old = leases.find(l => l.id === editingId);
+        updateLease(editingId, form);
+        if (old?.status !== 'Active' && form.status === 'Active') updateUnit(form.unit_id, { status: 'Occupied' });
+        if (old?.status !== 'Terminated' && form.status === 'Terminated') updateUnit(form.unit_id, { status: 'Available' });
+      } else {
+        addLease(form);
+        if (form.status === 'Active') updateUnit(form.unit_id, { status: 'Occupied' });
+      }
+      setShowModal(false); setEditingId(null); setForm(defaultForm);
+      setToast(editingId ? 'Lease updated successfully' : 'Lease created successfully');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleStatusChange = (lease: typeof leases[0], newStatus: LeaseStatus) => {
@@ -103,7 +164,7 @@ export default function LeasesPage() {
   const draftCount = leases.filter(l => l.status === 'Draft').length;
 
   return (
-    <div>
+    <>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Leases</h1>
@@ -169,6 +230,7 @@ export default function LeasesPage() {
                         {LEASE_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                       </select>
                       <button onClick={() => openEdit(lease)} className="text-blue-600 hover:text-blue-800 text-sm font-medium px-2">Edit</button>
+                      <button onClick={() => handleDuplicate(lease)} className="text-green-600 hover:text-green-800 text-sm font-medium px-2">Duplicate</button>
                       {deleteConfirmId === lease.id ? (
                         <>
                           <button onClick={() => handleDelete(lease.id)} className="bg-red-600 text-white px-3 py-1 rounded text-sm">Confirm</button>
@@ -188,6 +250,12 @@ export default function LeasesPage() {
                     <div><p className="text-gray-400 text-xs uppercase">Deposit</p><p className="font-medium">{formatUGX(lease.deposit_amount)}</p></div>
                     {lease.status === 'Active' && expiryDays !== null && (
                       <div><p className="text-gray-400 text-xs uppercase">Expiry</p><p className={`font-medium ${expired ? 'text-red-600' : expiringSoon ? 'text-yellow-600' : 'text-green-600'}`}>{expired ? `Expired ${Math.abs(expiryDays)}d ago` : `${expiryDays}d left`}</p></div>
+                    )}
+                    {(lease.late_fee_rate ?? 0) > 0 && (
+                      <div><p className="text-gray-400 text-xs uppercase">Late Fee</p><p className="font-medium text-orange-600">{lease.late_fee_type === 'flat' ? formatUGX(lease.late_fee_rate ?? 0) : `${lease.late_fee_rate ?? 0}%`}</p></div>
+                    )}
+                    {(lease.escalation_rate ?? 0) > 0 && (
+                      <div><p className="text-gray-400 text-xs uppercase">Escalation</p><p className="font-medium text-purple-600">{lease.escalation_rate}% / {lease.escalation_frequency ?? 'Yearly'}</p></div>
                     )}
                   </div>
                 </div>
@@ -283,16 +351,49 @@ export default function LeasesPage() {
                     {LEASE_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Late Fee Type</label>
+                  <select name="late_fee_type" value={form.late_fee_type} onChange={handleChange} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    <option value="percentage">Percentage of rent (%)</option>
+                    <option value="flat">Flat amount (UGX)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Late Fee Rate {form.late_fee_type === 'percentage' ? '(%)' : '(UGX)'}
+                  </label>
+                  <input type="number" name="late_fee_rate" value={form.late_fee_rate || ''} onChange={handleChange} min={0} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder={form.late_fee_type === 'percentage' ? 'e.g. 5' : 'e.g. 50000'} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rent Escalation Rate (%)</label>
+                  <input type="number" name="escalation_rate" value={form.escalation_rate || ''} onChange={handleChange} min={0} max={100} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. 10 for 10% annual increase" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Escalation Frequency</label>
+                  <select name="escalation_frequency" value={form.escalation_frequency} onChange={handleChange} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    {ESCALATION_FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                {form.escalation_rate > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Review Date</label>
+                    <input type="date" name="next_review_date" value={form.next_review_date} onChange={handleChange} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                    <p className="text-xs text-gray-500 mt-1">Auto-set from start date + frequency</p>
+                  </div>
+                )}
               </div>
               {form.status === 'Active' && <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">Setting status to <strong>Active</strong> will mark the unit as <strong>Occupied</strong>.</div>}
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
                 <button type="button" onClick={() => { setShowModal(false); setEditingId(null); }} className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-                <button type="submit" className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 font-medium">{editingId ? 'Update' : 'Create Lease'}</button>
+                <button type="submit" disabled={submitting} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                  {submitting ? 'Saving...' : (editingId ? 'Update' : 'Create Lease')}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
+    {toast && <Toast message={toast} onDismiss={() => setToast('')} />}
+    </>
   );
 }

@@ -1,7 +1,16 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Property, Unit, Tenant, Lease, Payment, MaintenanceRecord, Landlord, Contract, Application, CommunicationLog } from '../types';
+
+function friendlyError(err: any): string {
+  const msg: string = err?.message ?? String(err);
+  if (msg.includes('duplicate') || msg.includes('unique')) return 'This record already exists.';
+  if (msg.includes('foreign key') || msg.includes('violates')) return 'Cannot complete — related data is in use.';
+  if (msg.includes('network') || msg.includes('fetch')) return 'Network error — please check your connection.';
+  if (msg.includes('permission') || msg.includes('policy')) return 'You do not have permission to do that.';
+  return 'Something went wrong. Please try again.';
+}
+import { Property, Unit, Tenant, Lease, Payment, MaintenanceRecord, Landlord, Contract, Application, CommunicationLog, Expense, CommTemplate } from '../types';
 import { useAuth } from '../components/AuthProvider';
 import { supabase } from '../lib/supabase';
 import {
@@ -15,6 +24,8 @@ import {
   fetchContracts,
   fetchApplications, insertApplication, updateApplicationDB,
   fetchCommLogs, insertCommLog,
+  fetchExpenses, insertExpense, updateExpenseDB, deleteExpenseDB,
+  fetchCommTemplates, insertCommTemplate, updateCommTemplateDB, deleteCommTemplateDB,
 } from '../lib/database';
 
 interface AppContextType {
@@ -28,6 +39,8 @@ interface AppContextType {
   contracts: Contract[];
   applications: Application[];
   communicationLogs: CommunicationLog[];
+  expenses: Expense[];
+  commTemplates: CommTemplate[];
   loading: boolean;
   error: string | null;
   updateLandlord: (data: Partial<Landlord>) => void;
@@ -51,6 +64,12 @@ interface AppContextType {
   addApplication: (a: Omit<Application, 'id' | 'landlord_id' | 'created_at'>) => void;
   updateApplication: (id: string, a: Partial<Application>) => void;
   addCommunicationLog: (c: Omit<CommunicationLog, 'id' | 'landlord_id' | 'created_at'>) => void;
+  addExpense: (e: Omit<Expense, 'id' | 'created_at'>) => void;
+  updateExpense: (id: string, e: Partial<Expense>) => void;
+  deleteExpense: (id: string) => void;
+  addCommTemplate: (t: Omit<CommTemplate, 'id' | 'created_at'>) => void;
+  updateCommTemplate: (id: string, t: Partial<CommTemplate>) => void;
+  deleteCommTemplate: (id: string) => void;
 }
 
 const defaultLandlord: Landlord = {
@@ -85,6 +104,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationLog[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [commTemplates, setCommTemplates] = useState<CommTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,7 +133,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const propertyIds = props.map(p => p.id);
 
-        const [unitData, tenantData, leaseData, paymentData, maintData, contractData, appData, commData] =
+        const [unitData, tenantData, leaseData, paymentData, maintData, contractData, appData, commData, expenseData, templateData] =
           await Promise.all([
             fetchUnits(propertyIds),
             fetchTenants(user.id),
@@ -122,6 +143,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             fetchContracts(user.id),
             fetchApplications(user.id),
             fetchCommLogs(user.id),
+            fetchExpenses(user.id),
+            fetchCommTemplates(user.id),
           ]);
 
         setUnits(unitData);
@@ -132,9 +155,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setContracts(contractData);
         setApplications(appData);
         setCommunicationLogs(commData);
+        setExpenses(expenseData);
+        setCommTemplates(templateData);
       } catch (err: any) {
         console.error('Failed to load data:', err);
-        setError(err.message);
+        setError(friendlyError(err));
       } finally {
         setLoading(false);
       }
@@ -150,7 +175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase && user) await updateLandlordDB(user.id, data);
       setLandlord(prev => ({ ...prev, ...data }));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
 
   const addProperty = useCallback(async (p: Omit<Property, 'id' | 'landlord_id' | 'created_at'>) => {
@@ -160,7 +185,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newProp = await insertProperty({ ...p, landlord_id: user.id });
         setProperties(prev => [newProp, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
 
   const updateProperty = useCallback(async (id: string, p: Partial<Property>) => {
@@ -168,7 +193,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await updatePropertyDB(id, p);
       setProperties(prev => prev.map(x => x.id === id ? { ...x, ...p } : x));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const deleteProperty = useCallback(async (id: string) => {
@@ -177,7 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (supabase) await deletePropertyDB(id);
       setProperties(prev => prev.filter(x => x.id !== id));
       setUnits(prev => prev.filter(u => u.property_id !== id));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addUnit = useCallback(async (u: Omit<Unit, 'id' | 'created_at'>) => {
@@ -187,7 +212,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newUnit = await insertUnit(u);
         setUnits(prev => [newUnit, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const updateUnit = useCallback(async (id: string, u: Partial<Unit>) => {
@@ -195,7 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await updateUnitDB(id, u);
       setUnits(prev => prev.map(x => x.id === id ? { ...x, ...u } : x));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const deleteUnit = useCallback(async (id: string) => {
@@ -203,7 +228,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await deleteUnitDB(id);
       setUnits(prev => prev.filter(x => x.id !== id));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addTenant = useCallback(async (t: Omit<Tenant, 'id' | 'landlord_id' | 'created_at'>) => {
@@ -213,7 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newTenant = await insertTenant({ ...t, landlord_id: user.id });
         setTenants(prev => [newTenant, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
 
   const updateTenant = useCallback(async (id: string, t: Partial<Tenant>) => {
@@ -221,7 +246,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await updateTenantDB(id, t);
       setTenants(prev => prev.map(x => x.id === id ? { ...x, ...t } : x));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const deleteTenant = useCallback(async (id: string) => {
@@ -229,7 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await deleteTenantDB(id);
       setTenants(prev => prev.filter(x => x.id !== id));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addLease = useCallback(async (l: Omit<Lease, 'id' | 'landlord_id' | 'created_at'>) => {
@@ -239,7 +264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newLease = await insertLease({ ...l, landlord_id: user.id });
         setLeases(prev => [newLease, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
 
   const updateLease = useCallback(async (id: string, l: Partial<Lease>) => {
@@ -247,7 +272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await updateLeaseDB(id, l);
       setLeases(prev => prev.map(x => x.id === id ? { ...x, ...l } : x));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const deleteLease = useCallback(async (id: string) => {
@@ -255,7 +280,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await deleteLeaseDB(id);
       setLeases(prev => prev.filter(x => x.id !== id));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addPayment = useCallback(async (p: Omit<Payment, 'id' | 'created_at'>) => {
@@ -265,7 +290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newPayment = await insertPayment(p);
         setPayments(prev => [newPayment, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const deletePayment = useCallback(async (id: string) => {
@@ -273,7 +298,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await deletePaymentDB(id);
       setPayments(prev => prev.filter(x => x.id !== id));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addMaintenance = useCallback(async (m: Omit<MaintenanceRecord, 'id' | 'created_at'>) => {
@@ -283,7 +308,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newRecord = await insertMaintenance(m);
         setMaintenance(prev => [newRecord, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const updateMaintenance = useCallback(async (id: string, m: Partial<MaintenanceRecord>) => {
@@ -291,7 +316,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await updateMaintenanceDB(id, m);
       setMaintenance(prev => prev.map(x => x.id === id ? { ...x, ...m } : x));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const deleteMaintenance = useCallback(async (id: string) => {
@@ -299,7 +324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await deleteMaintenanceDB(id);
       setMaintenance(prev => prev.filter(x => x.id !== id));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addApplication = useCallback(async (a: Omit<Application, 'id' | 'landlord_id' | 'created_at'>) => {
@@ -309,7 +334,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newApp = await insertApplication({ ...a, landlord_id: user.id });
         setApplications(prev => [newApp, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
 
   const updateApplication = useCallback(async (id: string, a: Partial<Application>) => {
@@ -317,7 +342,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null);
       if (supabase) await updateApplicationDB(id, a);
       setApplications(prev => prev.map(x => x.id === id ? { ...x, ...a } : x));
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, []);
 
   const addCommunicationLog = useCallback(async (c: Omit<CommunicationLog, 'id' | 'landlord_id' | 'created_at'>) => {
@@ -327,17 +352,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newLog = await insertCommLog({ ...c, landlord_id: user.id });
         setCommunicationLogs(prev => [newLog, ...prev]);
       }
-    } catch (err: any) { setError(err.message); }
+    } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
+
+  const addExpense = useCallback(async (e: Omit<Expense, 'id' | 'created_at'>) => {
+    try {
+      setError(null);
+      if (supabase) {
+        const newExpense = await insertExpense(e);
+        setExpenses(prev => [newExpense, ...prev]);
+      }
+    } catch (err: any) { setError(friendlyError(err)); }
+  }, []);
+
+  const updateExpense = useCallback(async (id: string, e: Partial<Expense>) => {
+    try {
+      setError(null);
+      if (supabase) await updateExpenseDB(id, e);
+      setExpenses(prev => prev.map(x => x.id === id ? { ...x, ...e } : x));
+    } catch (err: any) { setError(friendlyError(err)); }
+  }, []);
+
+  const deleteExpense = useCallback(async (id: string) => {
+    try {
+      setError(null);
+      if (supabase) await deleteExpenseDB(id);
+      setExpenses(prev => prev.filter(x => x.id !== id));
+    } catch (err: any) { setError(friendlyError(err)); }
+  }, []);
+
+  const addCommTemplate = useCallback(async (t: Omit<CommTemplate, 'id' | 'created_at'>) => {
+    try {
+      setError(null);
+      if (supabase) {
+        const newTemplate = await insertCommTemplate(t);
+        setCommTemplates(prev => [newTemplate, ...prev]);
+      }
+    } catch (err: any) { setError(friendlyError(err)); }
+  }, []);
+
+  const updateCommTemplate = useCallback(async (id: string, t: Partial<CommTemplate>) => {
+    try {
+      setError(null);
+      if (supabase) await updateCommTemplateDB(id, t);
+      setCommTemplates(prev => prev.map(x => x.id === id ? { ...x, ...t } : x));
+    } catch (err: any) { setError(friendlyError(err)); }
+  }, []);
+
+  const deleteCommTemplate = useCallback(async (id: string) => {
+    try {
+      setError(null);
+      if (supabase) await deleteCommTemplateDB(id);
+      setCommTemplates(prev => prev.filter(x => x.id !== id));
+    } catch (err: any) { setError(friendlyError(err)); }
+  }, []);
 
   const value: AppContextType = {
     landlord, properties, units, tenants, leases, payments, maintenance, contracts, applications, communicationLogs,
+    expenses, commTemplates,
     loading, error,
     updateLandlord, addProperty, updateProperty, deleteProperty,
     addUnit, updateUnit, deleteUnit, addTenant, updateTenant, deleteTenant,
     addLease, updateLease, deleteLease, addPayment, deletePayment,
     addMaintenance, updateMaintenance, deleteMaintenance,
     addApplication, updateApplication, addCommunicationLog,
+    addExpense, updateExpense, deleteExpense,
+    addCommTemplate, updateCommTemplate, deleteCommTemplate,
   };
 
   if (loading) {

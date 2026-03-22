@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatUGX } from '../lib/utils';
 import { PropertyType, UnitStatus } from '../types';
+import Toast from '../components/Toast';
 
 const PROPERTY_TYPES: PropertyType[] = ['Residential', 'Commercial', 'Mixed'];
 const UNIT_STATUSES: UnitStatus[] = ['Available', 'Occupied', 'Under_maintenance'];
 
 export default function PropertiesPage() {
-  const { properties, units, applications, addProperty, updateProperty, deleteProperty, addUnit, updateUnit, deleteUnit } = useApp();
+  const { properties, units, leases, applications, addProperty, updateProperty, deleteProperty, addUnit, updateUnit, deleteUnit } = useApp();
 
   const [showPropertyForm, setShowPropertyForm] = useState(false);
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
@@ -21,6 +22,7 @@ export default function PropertiesPage() {
 
   const [expandedProperty, setExpandedProperty] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
 
   const pendingApps = applications.filter(a => a.status === 'Pending').length;
 
@@ -46,11 +48,20 @@ export default function PropertiesPage() {
     }
     setShowPropertyForm(false);
     setEditingPropertyId(null);
+    setToast(editingPropertyId ? 'Property updated' : 'Property added');
   };
 
   const handleDeleteProperty = (id: string) => {
-    const propertyUnits = units.filter(u => u.property_id === id);
-    propertyUnits.forEach(u => deleteUnit(u.id));
+    const propertyUnitIds = units.filter(u => u.property_id === id).map(u => u.id);
+    const hasActiveLeases = leases.some(
+      l => propertyUnitIds.includes(l.unit_id) && l.status === 'Active'
+    );
+    if (hasActiveLeases) {
+      alert('Cannot delete this property — it has active leases. Terminate all leases first.');
+      setDeleteConfirm(null);
+      return;
+    }
+    propertyUnitIds.forEach(uid => deleteUnit(uid));
     deleteProperty(id);
     setDeleteConfirm(null);
   };
@@ -77,6 +88,7 @@ export default function PropertiesPage() {
     }
     setShowUnitForm(null);
     setEditingUnitId(null);
+    setToast(editingUnitId ? 'Unit updated' : 'Unit added');
   };
 
   return (
@@ -278,6 +290,7 @@ export default function PropertiesPage() {
           </div>
         </div>
       )}
+      {toast && <Toast message={toast} onDismiss={() => setToast('')} />}
     </div>
   );
 }

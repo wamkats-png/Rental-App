@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
 import type {
   Landlord, Property, Unit, Tenant, Lease, Payment,
-  MaintenanceRecord, Contract, Application, CommunicationLog
+  MaintenanceRecord, Contract, Application, CommunicationLog,
+  Expense, CommTemplate
 } from '../types';
 
 // Helper: throw on error for void operations
@@ -210,4 +211,50 @@ export async function fetchCommLogs(landlordId: string): Promise<CommunicationLo
 
 export async function insertCommLog(log: Omit<CommunicationLog, 'id' | 'created_at'>): Promise<CommunicationLog> {
   return query(supabase!.from('communication_logs').insert(log).select().single());
+}
+
+// ── EXPENSES ──
+
+export async function fetchExpenses(landlordId: string): Promise<Expense[]> {
+  if (!supabase) return [];
+  return query(
+    supabase.from('expenses').select('*')
+      .eq('landlord_id', landlordId)
+      .order('date', { ascending: false })
+  );
+}
+
+export async function insertExpense(expense: Omit<Expense, 'id' | 'created_at'>): Promise<Expense> {
+  return query(supabase!.from('expenses').insert(expense).select().single());
+}
+
+export async function updateExpenseDB(id: string, updates: Partial<Expense>): Promise<void> {
+  await exec(supabase!.from('expenses').update(updates).eq('id', id));
+}
+
+export async function deleteExpenseDB(id: string): Promise<void> {
+  await exec(supabase!.from('expenses').delete().eq('id', id));
+}
+
+// ── COMM TEMPLATES ──
+
+export async function fetchCommTemplates(landlordId: string): Promise<CommTemplate[]> {
+  if (!supabase) return [];
+  return query(
+    supabase.from('comm_templates').select('*')
+      .eq('landlord_id', landlordId)
+      .order('created_at', { ascending: false })
+  );
+}
+
+export async function insertCommTemplate(template: Omit<CommTemplate, 'id' | 'created_at'>): Promise<CommTemplate> {
+  return query(supabase!.from('comm_templates').insert(template).select().single());
+}
+
+export async function updateCommTemplateDB(id: string, updates: Partial<CommTemplate>): Promise<void> {
+  await exec(supabase!.from('comm_templates').update(updates).eq('id', id));
+}
+
+export async function deleteCommTemplateDB(id: string): Promise<void> {
+  await exec(supabase!.from('comm_templates').delete().eq('id', id));
 }

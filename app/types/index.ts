@@ -9,7 +9,10 @@ export type LeaseStatus = 'Draft' | 'Pending_tenant_signature' | 'Pending_landlo
 export type PaymentMethod = 'Cash' | 'Mobile_Money' | 'Bank';
 export type MaintenanceCategory = 'Plumbing' | 'Electrical' | 'Structural' | 'Other';
 export type MaintenancePayer = 'Landlord' | 'Tenant';
+export type MaintenanceStatus = 'Open' | 'In Progress' | 'Resolved';
+export type MaintenancePriority = 'Low' | 'Medium' | 'High';
 export type ContractType = 'Residential' | 'Commercial' | 'Other';
+export type ExpenseCategory = 'Insurance' | 'Council Rates' | 'Agent Fees' | 'Ground Rent' | 'Utilities' | 'Legal & Professional' | 'Bank Charges' | 'Other';
 
 export interface Landlord {
   id: string;
@@ -76,6 +79,11 @@ export interface Lease {
   utilities_responsibility: UtilitiesResponsibility;
   notice_period_days: number;
   status: LeaseStatus;
+  late_fee_type?: 'percentage' | 'flat';
+  late_fee_rate?: number;
+  escalation_rate?: number;
+  escalation_frequency?: 'Yearly' | '2 Years';
+  next_review_date?: string;
   created_at: string;
 }
 
@@ -107,6 +115,9 @@ export interface MaintenanceRecord {
   vendor: string;
   cost: number;
   payer: MaintenancePayer;
+  status?: MaintenanceStatus;
+  priority?: MaintenancePriority;
+  resolved_date?: string;
   created_at: string;
 }
 
@@ -162,4 +173,25 @@ export interface Receipt {
   payment_id: string;
   receipt_number: string;
   generated_at: string;
+}
+
+export interface Expense {
+  id: string;
+  landlord_id: string;
+  property_id?: string;
+  date: string;
+  category: ExpenseCategory;
+  description?: string;
+  amount: number;
+  receipt_ref?: string;
+  created_at: string;
+}
+
+export interface CommTemplate {
+  id: string;
+  landlord_id: string;
+  name: string;
+  category: string;
+  body: string;
+  created_at: string;
 }
