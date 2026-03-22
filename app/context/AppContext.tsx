@@ -26,6 +26,7 @@ import {
   fetchCommLogs, insertCommLog,
   fetchExpenses, insertExpense, updateExpenseDB, deleteExpenseDB,
   fetchCommTemplates, insertCommTemplate, updateCommTemplateDB, deleteCommTemplateDB,
+  insertAuditLog,
 } from '../lib/database';
 
 interface AppContextType {
@@ -184,6 +185,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (supabase && user) {
         const newProp = await insertProperty({ ...p, landlord_id: user.id });
         setProperties(prev => [newProp, ...prev]);
+        insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'property', entity_id: newProp.id, summary: `Added property: ${p.name}` });
       }
     } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
@@ -237,6 +239,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (supabase && user) {
         const newTenant = await insertTenant({ ...t, landlord_id: user.id });
         setTenants(prev => [newTenant, ...prev]);
+        insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'tenant', entity_id: newTenant.id, summary: `Added tenant: ${t.full_name}` });
       }
     } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
@@ -263,6 +266,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (supabase && user) {
         const newLease = await insertLease({ ...l, landlord_id: user.id });
         setLeases(prev => [newLease, ...prev]);
+        insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'lease', entity_id: newLease.id, summary: `Created lease — UGX ${l.rent_amount.toLocaleString()}/mo` });
       }
     } catch (err: any) { setError(friendlyError(err)); }
   }, [user]);
@@ -289,9 +293,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (supabase) {
         const newPayment = await insertPayment(p);
         setPayments(prev => [newPayment, ...prev]);
+        if (user) insertAuditLog({ landlord_id: p.landlord_id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'payment', entity_id: newPayment.id, summary: `Payment recorded — UGX ${p.amount.toLocaleString()} (${p.receipt_number})` });
       }
     } catch (err: any) { setError(friendlyError(err)); }
-  }, []);
+  }, [user]);
 
   const deletePayment = useCallback(async (id: string) => {
     try {

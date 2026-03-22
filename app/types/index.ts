@@ -24,6 +24,9 @@ export interface Landlord {
   subscription_plan: SubscriptionPlan;
   created_at: string;
   updated_at?: string;
+  logo_url?: string;
+  primary_color?: string;
+  company_tagline?: string;
 }
 
 export interface Property {
@@ -195,3 +198,39 @@ export interface CommTemplate {
   body: string;
   created_at: string;
 }
+
+// ── PHASE 5: MULTI-USER ──────────────────────────────────────────────────────
+
+export type TeamRole = 'Owner' | 'Manager' | 'Viewer';
+export type InviteStatus = 'Pending' | 'Active' | 'Revoked';
+
+export interface TeamMember {
+  id: string;
+  owner_id: string;
+  user_id: string | null;
+  email: string;
+  name: string;
+  role: TeamRole;
+  status: InviteStatus;
+  invite_token: string;
+  created_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  landlord_id: string;
+  user_id: string;
+  user_email: string;
+  action: 'create' | 'update' | 'delete';
+  entity_type: string;
+  entity_id: string;
+  summary: string;
+  created_at: string;
+}
+
+export interface BrandingConfig {
+  logo_url: string;
+  primary_color: string;
+  company_tagline: string;
+}
+

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useApp } from '../context/AppContext';
 import { useAuth } from './AuthProvider';
+import { useSubscription } from '../lib/useSubscription';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: 'H' },
@@ -29,6 +30,7 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
   const { user, signOut } = useAuth();
 
   const pendingApps = applications.filter(a => a.status === 'Pending').length;
+  const { isFree, propertiesUsed, propertiesMax } = useSubscription();
 
   return (
     <aside className="w-64 bg-blue-900 text-white min-h-screen flex flex-col">
@@ -90,6 +92,16 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
           <span>Sign Out</span>
         </button>
       </div>
+
+      {isFree && (
+        <div className="p-3 mx-3 mb-3 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl text-white text-xs">
+          <p className="font-semibold mb-0.5">Free Plan</p>
+          <p className="opacity-80 mb-2">{propertiesUsed}/{propertiesMax} properties used</p>
+          <Link href="/upgrade" className="block text-center bg-white text-purple-700 font-semibold py-1.5 rounded-lg hover:bg-purple-50 transition-colors">
+            Upgrade to AI Assist ↗
+          </Link>
+        </div>
+      )}
 
       <div className="p-4 border-t border-blue-800 text-blue-300 text-xs">
         RentFlow Uganda v1.0

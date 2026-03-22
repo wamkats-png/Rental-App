@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import type {
   Landlord, Property, Unit, Tenant, Lease, Payment,
   MaintenanceRecord, Contract, Application, CommunicationLog,
-  Expense, CommTemplate
+  Expense, CommTemplate, TeamMember, AuditLog
 } from '../types';
 
 // Helper: throw on error for void operations
@@ -257,4 +257,48 @@ export async function updateCommTemplateDB(id: string, updates: Partial<CommTemp
 
 export async function deleteCommTemplateDB(id: string): Promise<void> {
   await exec(supabase!.from('comm_templates').delete().eq('id', id));
+}
+
+// ── TEAM MEMBERS ──────────────────────────────────────────────────────────────
+
+export async function fetchTeamMembers(ownerId: string): Promise<TeamMember[]> {
+  if (!supabase) return [];
+  return query(supabase.from('team_members').select('*').eq('owner_id', ownerId).order('created_at', { ascending: false }));
+}
+
+export async function insertTeamMember(m: Omit<TeamMember, 'id' | 'created_at'>): Promise<TeamMember> {
+  return query(supabase!.from('team_members').insert(m).select().single());
+}
+
+export async function updateTeamMemberDB(id: string, updates: Partial<TeamMember>): Promise<void> {
+  await exec(supabase!.from('team_members').update(updates).eq('id', id));
+}
+
+export async function deleteTeamMemberDB(id: string): Promise<void> {
+  await exec(supabase!.from('team_members').delete().eq('id', id));
+}
+
+export async function findTeamMemberByToken(token: string): Promise<TeamMember | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.from('team_members').select('*').eq('invite_token', token).single();
+  return data;
+}
+
+export async function findTeamMemberByUserId(userId: string): Promise<TeamMember | null> {
+  if (!supabase) return null;
+  const { data } = await supabase.from('team_members').select('*').eq('user_id', userId).eq('status', 'Active').single();
+  return data;
+}
+
+// ── AUDIT LOGS ──────────────────────────────────────────────────────────────
+
+export async function fetchAuditLogs(landlordId: string): Promise<AuditLog[]> {
+  if (!supabase) return [];
+  return query(supabase.from('audit_logs').select('*').eq('landlord_id', landlordId).order('created_at', { ascending: false }).limit(200));
+}
+
+export async function insertAuditLog(log: Omit<AuditLog, 'id' | 'created_at'>): Promise<void> {
+  if (!supabase) return;
+  // Fire-and-forget — never block UI
+  void supabase.from('audit_logs').insert(log);
 }

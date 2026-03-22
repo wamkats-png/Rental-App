@@ -5,6 +5,7 @@ import { AppProvider } from './context/AppContext';
 import { AuthProvider } from './components/AuthProvider';
 import LayoutContent from './components/LayoutContent';
 import { ThemeProvider } from './components/ThemeProvider';
+import { RoleProvider } from './context/RoleContext';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -20,7 +21,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <AuthProvider>
             <AppProvider>
-              <LayoutContent>{children}</LayoutContent>
+              <RoleProvider>
+                <LayoutContent>{children}</LayoutContent>
+              </RoleProvider>
             </AppProvider>
           </AuthProvider>
         </ThemeProvider>
