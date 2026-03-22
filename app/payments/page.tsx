@@ -74,6 +74,18 @@ export default function PaymentsPage() {
       payment_method: form.payment_method, period_start: form.period_start, period_end: form.period_end,
       withholding_tax_amount: form.withholding_tax_amount, receipt_number: form.receipt_number,
     });
+
+    // Fire SMS receipt confirmation (fire-and-forget)
+    const tenant = tenants.find(t => t.id === lease.tenant_id);
+    if (tenant?.phone) {
+      const msg = `Dear ${tenant.full_name}, we have received your rent payment of UGX ${form.amount.toLocaleString()} on ${form.date}. Receipt: ${form.receipt_number}. Thank you! - RentFlow`;
+      fetch('/api/send-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: tenant.phone, message: msg }),
+      }).catch(() => {}); // silent fail — don't block UI
+    }
+
     setForm({ lease_id: '', date: today, amount: 0, payment_method: 'Mobile_Money', period_start: '', period_end: '', withholding_tax_amount: 0, receipt_number: generateReceiptNumber() });
     setShowModal(false);
     setToast('Payment recorded successfully');
