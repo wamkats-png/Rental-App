@@ -29,7 +29,7 @@ export async function fetchLandlord(userId: string): Promise<Landlord | null> {
 
 export async function updateLandlordDB(userId: string, updates: Partial<Landlord>): Promise<void> {
   if (!supabase) return;
-  await exec(supabase.from('landlords').update(updates).eq('id', userId));
+  await exec(supabase.from('landlords').upsert({ id: userId, ...updates }, { onConflict: 'id' }));
 }
 
 // ── PROPERTIES ──

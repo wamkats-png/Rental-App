@@ -74,26 +74,32 @@ export default function TeamPage() {
 
   const copyInviteLink = (token: string) => {
     const url = `${window.location.origin}/join?token=${token}`;
-    navigator.clipboard.writeText(url);
-    setCopiedToken(token);
-    setTimeout(() => setCopiedToken(null), 2000);
+    navigator.clipboard.writeText(url)
+      .then(() => {
+        setCopiedToken(token);
+        setTimeout(() => setCopiedToken(null), 2000);
+      })
+      .catch(() => setError('Could not copy to clipboard. Please copy the link manually.'));
   };
 
   const handleRoleChange = async (id: string, role: TeamRole) => {
     if (!supabase) return;
-    await supabase.from('team_members').update({ role }).eq('id', id);
+    const { error: err } = await supabase.from('team_members').update({ role }).eq('id', id);
+    if (err) { setError(err.message); return; }
     setMembers(prev => prev.map(m => m.id === id ? { ...m, role } : m));
   };
 
   const handleRevoke = async (id: string) => {
     if (!supabase) return;
-    await supabase.from('team_members').update({ status: 'Revoked' }).eq('id', id);
+    const { error: err } = await supabase.from('team_members').update({ status: 'Revoked' }).eq('id', id);
+    if (err) { setError(err.message); return; }
     setMembers(prev => prev.map(m => m.id === id ? { ...m, status: 'Revoked' } : m));
   };
 
   const handleRemove = async (id: string) => {
     if (!supabase) return;
-    await supabase.from('team_members').delete().eq('id', id);
+    const { error: err } = await supabase.from('team_members').delete().eq('id', id);
+    if (err) { setError(err.message); return; }
     setMembers(prev => prev.filter(m => m.id !== id));
   };
 

@@ -15,7 +15,7 @@ export default function Dashboard() {
   // Redirect new users to onboarding
   useEffect(() => {
     if (!loading && properties.length === 0 && !landlord.name) {
-      router.push('/welcome');
+      router.replace('/welcome');
     }
   }, [loading, properties, landlord, router]);
 
@@ -72,6 +72,8 @@ export default function Dashboard() {
   const totalExpensesThisMonth = allExpensesThisMonth.reduce((sum, e) => sum + e.amount, 0);
   const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 100) : 0;
 
+  const filteredPayments = filterByProperty(payments);
+
   const overduePayments = activeLeases.filter(l => {
     const gracePeriodEnd = new Date(now.getFullYear(), now.getMonth(), l.due_day + l.grace_period_days);
     const hasPaymentThisMonth = filteredPayments.some(p => {
@@ -97,8 +99,6 @@ export default function Dashboard() {
     setDismissedIds(next);
     try { sessionStorage.setItem('dismissed-expiry-alerts', JSON.stringify(next)); } catch {}
   };
-
-  const filteredPayments = filterByProperty(payments);
 
   const last6Months = Array.from({ length: 6 }, (_, i) => {
     const date = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);

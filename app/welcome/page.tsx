@@ -11,6 +11,7 @@ export default function WelcomePage() {
   const { landlord, updateLandlord, addProperty, addUnit } = useApp();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // Step 1: Profile
   const [profile, setProfile] = useState({
@@ -30,37 +31,44 @@ export default function WelcomePage() {
   const [unitCount, setUnitCount] = useState(1);
 
   const handleProfileSave = async () => {
+    setSaveError('');
     setSaving(true);
-    await updateLandlord(profile);
-    setSaving(false);
-    setStep(2);
+    try {
+      await updateLandlord(profile);
+      setStep(2);
+    } catch {
+      setSaveError('Failed to save profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePropertySave = async () => {
+    setSaveError('');
     if (!property.name) {
       setStep(3);
       return;
     }
     setSaving(true);
-    await addProperty({
-      name: property.name,
-      address: property.address,
-      district: property.district,
-      lc_area: '',
-      property_type: property.property_type,
-      property_rates_ref: '',
-    });
-
-    // Wait for the property to be created, then add units
-    // Since addProperty updates state, we need a brief delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    setSaving(false);
-    setStep(3);
+    try {
+      await addProperty({
+        name: property.name,
+        address: property.address,
+        district: property.district,
+        lc_area: '',
+        property_type: property.property_type,
+        property_rates_ref: '',
+      });
+      setStep(3);
+    } catch {
+      setSaveError('Failed to save property. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleFinish = () => {
-    router.push('/');
+    router.replace('/');
   };
 
   return (
@@ -127,6 +135,7 @@ export default function WelcomePage() {
                   placeholder="Optional — you can add this later"
                 />
               </div>
+              {saveError && <p className="text-red-600 text-sm">{saveError}</p>}
               <button
                 onClick={handleProfileSave}
                 disabled={!profile.name || saving}
@@ -188,9 +197,10 @@ export default function WelcomePage() {
                   <option value="Mixed">Mixed Use</option>
                 </select>
               </div>
+              {saveError && <p className="text-red-600 text-sm">{saveError}</p>}
               <div className="flex gap-3 mt-2">
                 <button
-                  onClick={() => { setProperty({ name: '', address: '', district: '', property_type: 'Residential' }); setStep(3); }}
+                  onClick={() => { setSaveError(''); setProperty({ name: '', address: '', district: '', property_type: 'Residential' }); setStep(3); }}
                   className="flex-1 border border-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-50 transition-all font-medium"
                 >
                   Skip
