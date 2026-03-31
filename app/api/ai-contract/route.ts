@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
     });
@@ -99,7 +99,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Strip any accidental markdown code fences before parsing
-    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    let cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    // If response was truncated (hit token limit), close the JSON so it parses
+    if (response.stop_reason === 'max_tokens') {
+      // Find the last complete field and close the object
+      const lastComma = cleaned.lastIndexOf(',"');
+      if (lastComma !== -1) cleaned = cleaned.slice(0, lastComma);
+      cleaned = cleaned + '"}';
+    }
     const parsed = JSON.parse(cleaned);
 
     // Sanitize contract_html: strip script tags and inline event handlers
