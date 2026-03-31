@@ -92,7 +92,10 @@ export async function POST(req: NextRequest) {
         response = await anthropic.messages.create({
           model: 'claude-sonnet-4-6',
           max_tokens: 8192,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [
+            { role: 'user', content: prompt },
+            { role: 'assistant', content: '{' },
+          ],
         });
         break;
       } catch (e: any) {
@@ -106,19 +109,32 @@ export async function POST(req: NextRequest) {
     }
     if (!response) throw new Error('API unavailable after retries');
 
-    const rawText = response.content[0].type === 'text' ? response.content[0].text.trim() : '{}';
+    // Prepend the prefill '{' since we used assistant prefill to force JSON start
+    const rawContent = response.content[0].type === 'text' ? response.content[0].text.trim() : '}';
+    const rawText = ('{' + rawContent).trim();
 
-    // Strip markdown code fences
-    const jsonText = rawText
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/, '')
-      .trim();
+    // Robustly extract JSON from the response — handles code fences, leading/trailing text
+    let jsonText = rawText;
+
+    // 1. Try stripping markdown code fences (```json ... ``` or ``` ... ```)
+    const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenceMatch) {
+      jsonText = fenceMatch[1].trim();
+    } else {
+      // 2. Find the outermost { ... } block in the response
+      const firstBrace = rawText.indexOf('{');
+      const lastBrace = rawText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        jsonText = rawText.slice(firstBrace, lastBrace + 1);
+      }
+    }
 
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(jsonText);
       if (typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Not an object');
     } catch {
+      console.error('Portfolio parse error. Raw response:', rawText.slice(0, 500));
       return NextResponse.json(
         { error: 'AI returned an unexpected format. Please try again.' },
         { status: 500 }
