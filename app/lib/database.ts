@@ -25,7 +25,7 @@ export async function fetchLandlord(userId: string): Promise<Landlord | null> {
   const { data, error } = await supabase
     .from('landlords').select('*').eq('id', userId).single();
   // 406 = no row found (user signed up before auto-create trigger) — upsert a default row
-  if (error && (error.code === 'PGRST116' || error.status === 406)) {
+  if (error && error.code === 'PGRST116') {
     const { data: created } = await supabase
       .from('landlords')
       .upsert({ id: userId, name: '', email: '', phone: '', landlord_type: 'Individual', ura_tin: '', subscription_plan: 'Free' }, { onConflict: 'id' })
