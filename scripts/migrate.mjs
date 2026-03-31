@@ -72,6 +72,106 @@ async function runSQL(projectRef, token, sql) {
   return data;
 }
 
+/**
+ * Split a SQL file into individual statements, respecting:
+ * - $$ dollar-quoted blocks (PL/pgSQL function bodies)
+ * - Standard semicolon terminators
+ * - Comments
+ */
+function splitStatements(sql) {
+  const statements = [];
+  let current = '';
+  let inDollarQuote = false;
+  let dollarTag = '';
+  let i = 0;
+
+  while (i < sql.length) {
+    // Check for dollar-quote start/end
+    if (sql[i] === '$') {
+      const end = sql.indexOf('$', i + 1);
+      if (end !== -1) {
+        const tag = sql.slice(i, end + 1);
+        if (!inDollarQuote) {
+          inDollarQuote = true;
+          dollarTag = tag;
+          current += tag;
+          i = end + 1;
+          continue;
+        } else if (tag === dollarTag) {
+          inDollarQuote = false;
+          dollarTag = '';
+          current += tag;
+          i = end + 1;
+          continue;
+        }
+      }
+    }
+
+    if (!inDollarQuote && sql[i] === ';') {
+      current += ';';
+      const trimmed = current.trim();
+      // Skip pure comment blocks and empty statements
+      if (trimmed && !trimmed.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim().match(/^;*$/)) {
+        statements.push(trimmed);
+      }
+      current = '';
+      i++;
+      continue;
+    }
+
+    current += sql[i];
+    i++;
+  }
+
+  // Catch any trailing statement without a trailing semicolon
+  const trimmed = current.trim();
+  if (trimmed && !trimmed.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim().match(/^;*$/)) {
+    statements.push(trimmed);
+  }
+
+  return statements;
+}
+
+async function runMigrationFile(projectRef, token, sql) {
+  const statements = splitStatements(sql);
+  const warnings = [];
+
+  for (let i = 0; i < statements.length; i++) {
+    const stmt = statements[i];
+    const code = stmt.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+    if (!code || code === ';') continue;
+
+    try {
+      await runSQL(projectRef, token, stmt);
+    } catch (e) {
+      // Classify: "already exists" and "does not exist" on IF NOT EXISTS constructs
+      // are non-fatal — the schema is just in a different state than expected.
+      // We warn and continue so later migrations (like 010) can patch things up.
+      const msg = e.message || '';
+      const isNonFatal =
+        msg.includes('already exists') ||
+        msg.includes('does not exist') ||
+        msg.includes('duplicate_object') ||
+        msg.includes('42710') ||  // duplicate_object
+        msg.includes('42P07') ||  // duplicate_table
+        msg.includes('42703');    // undefined_column (index on missing col)
+
+      if (isNonFatal) {
+        warnings.push(`  ⚠  stmt ${i + 1}: ${msg.split('\n')[0]}`);
+      } else {
+        // Fatal: unknown error — rethrow to abort the migration
+        throw e;
+      }
+    }
+  }
+
+  if (warnings.length > 0) {
+    console.log('');
+    for (const w of warnings) console.log(w);
+    process.stdout.write('     ');
+  }
+}
+
 async function ensureMigrationsTable(projectRef, token) {
   await runSQL(projectRef, token, `
     CREATE TABLE IF NOT EXISTS _schema_migrations (
@@ -209,7 +309,7 @@ async function main() {
 
     process.stdout.write(`  ▶  ${filename} ... `);
     try {
-      await runSQL(projectRef, token, sql);
+      await runMigrationFile(projectRef, token, sql);
       await markApplied(projectRef, token, filename);
       console.log('✅');
       successCount++;

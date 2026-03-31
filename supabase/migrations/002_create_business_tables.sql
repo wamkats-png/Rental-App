@@ -1,7 +1,7 @@
 -- 002: Create all business tables
 
 -- PROPERTIES
-CREATE TABLE properties (
+CREATE TABLE IF NOT EXISTS properties (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
   name text NOT NULL,
@@ -15,10 +15,10 @@ CREATE TABLE properties (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_properties_landlord ON properties(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_properties_landlord ON properties(landlord_id);
 
 -- UNITS
-CREATE TABLE units (
+CREATE TABLE IF NOT EXISTS units (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   property_id uuid NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
   code text NOT NULL,
@@ -31,10 +31,10 @@ CREATE TABLE units (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_units_property ON units(property_id);
+CREATE INDEX IF NOT EXISTS idx_units_property ON units(property_id);
 
 -- TENANTS
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS tenants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
   full_name text NOT NULL,
@@ -48,10 +48,10 @@ CREATE TABLE tenants (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_tenants_landlord ON tenants(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_tenants_landlord ON tenants(landlord_id);
 
 -- LEASES
-CREATE TABLE leases (
+CREATE TABLE IF NOT EXISTS leases (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
   property_id uuid NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
@@ -77,12 +77,12 @@ CREATE TABLE leases (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_leases_landlord ON leases(landlord_id);
-CREATE INDEX idx_leases_tenant ON leases(tenant_id);
-CREATE INDEX idx_leases_unit ON leases(unit_id);
+CREATE INDEX IF NOT EXISTS idx_leases_landlord ON leases(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_leases_tenant ON leases(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_leases_unit ON leases(unit_id);
 
 -- PAYMENTS
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -101,12 +101,12 @@ CREATE TABLE payments (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_payments_landlord ON payments(landlord_id);
-CREATE INDEX idx_payments_lease ON payments(lease_id);
-CREATE INDEX idx_payments_date ON payments(date);
+CREATE INDEX IF NOT EXISTS idx_payments_landlord ON payments(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_payments_lease ON payments(lease_id);
+CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(date);
 
 -- MAINTENANCE RECORDS
-CREATE TABLE maintenance_records (
+CREATE TABLE IF NOT EXISTS maintenance_records (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
   property_id uuid NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
@@ -123,11 +123,11 @@ CREATE TABLE maintenance_records (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_maintenance_landlord ON maintenance_records(landlord_id);
-CREATE INDEX idx_maintenance_property ON maintenance_records(property_id);
+CREATE INDEX IF NOT EXISTS idx_maintenance_landlord ON maintenance_records(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_maintenance_property ON maintenance_records(property_id);
 
 -- CONTRACTS
-CREATE TABLE contracts (
+CREATE TABLE IF NOT EXISTS contracts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lease_id uuid NOT NULL REFERENCES leases(id) ON DELETE CASCADE,
   template_type text DEFAULT '',
@@ -140,10 +140,10 @@ CREATE TABLE contracts (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_contracts_lease ON contracts(lease_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_lease ON contracts(lease_id);
 
 -- APPLICATIONS
-CREATE TABLE applications (
+CREATE TABLE IF NOT EXISTS applications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
   unit_id uuid NOT NULL REFERENCES units(id) ON DELETE CASCADE,
@@ -161,10 +161,10 @@ CREATE TABLE applications (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_applications_landlord ON applications(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_applications_landlord ON applications(landlord_id);
 
 -- COMMUNICATION LOGS
-CREATE TABLE communication_logs (
+CREATE TABLE IF NOT EXISTS communication_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   landlord_id uuid NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
@@ -176,5 +176,5 @@ CREATE TABLE communication_logs (
   updated_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX idx_commlogs_tenant ON communication_logs(tenant_id);
-CREATE INDEX idx_commlogs_landlord ON communication_logs(landlord_id);
+CREATE INDEX IF NOT EXISTS idx_commlogs_tenant ON communication_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_commlogs_landlord ON communication_logs(landlord_id);
