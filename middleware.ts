@@ -3,14 +3,16 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({ request });
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return response;
+    return NextResponse.next({ request });
   }
+
+  // Must use a mutable reference so setAll can recreate the response
+  // with updated request cookies — required by @supabase/ssr 0.5+
+  let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
@@ -18,17 +20,24 @@ export async function middleware(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
-        });
+        // Update request cookies so server-side code in this request sees the new tokens
+        cookiesToSet.forEach(({ name, value, options }) =>
+          request.cookies.set(name, value, options)
+        );
+        // Recreate response with updated request, then set response cookies
+        supabaseResponse = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          supabaseResponse.cookies.set(name, value, options)
+        );
       },
     },
   });
 
-  // Refresh the session token
+  // Refresh the session — IMPORTANT: do not use getSession() here,
+  // getUser() validates the JWT against Supabase Auth server
   await supabase.auth.getUser();
 
-  return response;
+  return supabaseResponse;
 }
 
 export const config = {
