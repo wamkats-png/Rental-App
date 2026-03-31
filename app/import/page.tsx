@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import * as XLSX from 'xlsx';
 import {
   parseCSV, mapTenantRow, mapPropertyRow,
   TENANT_SAMPLE_HEADERS, TENANT_SAMPLE_ROWS,
@@ -78,22 +79,44 @@ export default function ImportPage() {
     }
   };
 
+  const extractText = (file: File): Promise<string> => {
+    const isExcel = /\.(xlsx|xls|ods)$/i.test(file.name) || file.type.includes('spreadsheet') || file.type.includes('excel');
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      if (isExcel) {
+        reader.onload = e => {
+          try {
+            const wb = XLSX.read(e.target?.result, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            resolve(XLSX.utils.sheet_to_csv(ws));
+          } catch {
+            reject(new Error('Could not parse Excel file. Please try saving it as CSV first.'));
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.onload = e => resolve(e.target?.result as string ?? '');
+        reader.readAsText(file);
+      }
+    });
+  };
+
   const handleFile = (file: File) => {
     setRows([]);
     setDone(false);
     setImportedCount(0);
     setAiError('');
-    const reader = new FileReader();
-    reader.onload = e => {
-      const text = e.target?.result as string;
+    extractText(file).then(text => {
       if (!text?.trim()) return;
       if (mode === 'ai') {
         parseWithAI(text);
       } else {
         parseStandard(text);
       }
-    };
-    reader.readAsText(file);
+    }).catch(err => {
+      setAiError(err.message);
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -188,7 +211,7 @@ export default function ImportPage() {
             <div>
               <p className="text-sm font-semibold text-violet-800 dark:text-violet-200">AI Smart Import — powered by Claude</p>
               <p className="text-xs text-violet-600 dark:text-violet-300 mt-1">
-                Upload any file — doesn't have to match our template exactly. Claude will detect your column names, remap them to the correct fields, and flag any issues. Supports CSV, TSV, semicolon-delimited, and other text formats.
+                Upload any file — doesn't have to match our template exactly. Claude will detect your column names, remap them to the correct fields, and flag any issues. Supports CSV, TSV, Excel (.xlsx/.xls), semicolon-delimited, and other formats.
               </p>
             </div>
           </div>
@@ -266,7 +289,7 @@ export default function ImportPage() {
               {mode === 'ai' ? 'Drop any file here — Claude will figure it out' : 'Drop your CSV file here'}
             </p>
             <p className="text-sm text-gray-400 dark:text-gray-500">
-              {mode === 'ai' ? 'CSV, TSV, or any text-delimited format' : 'or click to browse'}
+              {mode === 'ai' ? 'CSV, TSV, Excel (.xlsx), or any text-delimited format' : 'or click to browse'}
             </p>
             {mode === 'ai' && (
               <p className="text-xs text-violet-400 dark:text-violet-500 mt-2">Any column names — Claude will map them automatically</p>
@@ -274,7 +297,7 @@ export default function ImportPage() {
             <input
               ref={fileRef}
               type="file"
-              accept={mode === 'ai' ? '.csv,.tsv,.txt' : '.csv'}
+              accept={mode === 'ai' ? '.csv,.tsv,.txt,.xlsx,.xls,.ods' : '.csv'}
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
             />
