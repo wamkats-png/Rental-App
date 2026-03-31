@@ -21,8 +21,9 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookiesToSet) {
         // Update request cookies so server-side code in this request sees the new tokens
-        cookiesToSet.forEach(({ name, value, options }) =>
-          request.cookies.set(name, value, options)
+        // Note: Next.js 15 request.cookies.set() only accepts (name, value) — no options
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value)
         );
         // Recreate response with updated request, then set response cookies
         supabaseResponse = NextResponse.next({ request });
