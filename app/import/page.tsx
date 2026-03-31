@@ -2,7 +2,6 @@
 
 import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import * as XLSX from 'xlsx';
 import {
   parseCSV, mapTenantRow, mapPropertyRow,
   TENANT_SAMPLE_HEADERS, TENANT_SAMPLE_ROWS,
@@ -85,8 +84,9 @@ export default function ImportPage() {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error('Failed to read file'));
       if (isExcel) {
-        reader.onload = e => {
+        reader.onload = async e => {
           try {
+            const XLSX = await import('xlsx');
             const wb = XLSX.read(e.target?.result, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
             resolve(XLSX.utils.sheet_to_csv(ws));
