@@ -113,12 +113,26 @@ Keep responses under 200 words unless a detailed breakdown is requested.
 
 ${contextSummary}`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 600,
-      system: systemPrompt,
-      messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
-    });
+    let response;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 600,
+          system: systemPrompt,
+          messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+        });
+        break;
+      } catch (e: any) {
+        const isOverloaded = e?.status === 529 || e?.message?.includes('overloaded');
+        if (isOverloaded && attempt < 2) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (!response) throw new Error('API unavailable after retries');
 
     const reply = response.content[0].type === 'text' ? response.content[0].text : '';
 

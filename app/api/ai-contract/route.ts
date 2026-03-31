@@ -86,12 +86,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userContent }],
-    });
+    // Retry up to 3 times on overload (529) with exponential backoff
+    let response;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8192,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userContent }],
+        });
+        break;
+      } catch (e: any) {
+        const isOverloaded = e?.status === 529 || e?.message?.includes('overloaded');
+        if (isOverloaded && attempt < 2) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (!response) throw new Error('API unavailable after retries');
 
     const content = response.content[0].type === 'text' ? response.content[0].text : '';
     if (!content) {
