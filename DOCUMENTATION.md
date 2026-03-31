@@ -527,6 +527,16 @@ To switch to production SMS: change `AFRICASTALKING_ENV=production` in Vercel en
 | 6 | Team page `copyInviteLink` set "Copied!" before clipboard write completed | `app/settings/team/page.tsx` | Moved `setCopiedToken` into `.then()` callback |
 | 7 | Team page `handleRoleChange`, `handleRevoke`, `handleRemove` had no error handling — silent failures | `app/settings/team/page.tsx` | Added error checking and `setError()` on failure |
 
+### Fixed in Audit (2026-03-22) — Second Pass
+
+| # | Issue | File | Fix |
+|---|-------|------|-----|
+| 8 | **CRITICAL** "Go to Dashboard" button after welcome wizard did not navigate to dashboard — dashboard redirected back to `/welcome` because `updateLandlord` only called `setLandlord` after an `await`, so if the DB write threw, local state was never set, leaving `landlord.name` empty. Dashboard condition `properties.length === 0 && !landlord.name` then fired a redirect loop. | `app/context/AppContext.tsx` | Moved `setLandlord` **before** the async DB call (optimistic update pattern) so local state is always updated regardless of DB result. |
+| 9 | Dashboard `!landlord.name` check could mis-redirect users who have a name but zero properties (e.g. after skipping property step) | `app/page.tsx` | Changed redirect condition to `!landlord.id && !landlord.name` — only fires when the landlord record has truly never been initialised |
+| 10 | **CRITICAL** Unit delete button in Properties page fired `deleteUnit(id)` directly with no confirmation dialog and no active-lease guard | `app/properties/page.tsx` | Added `deleteUnitConfirm` state, `handleDeleteUnit` with active-lease check, and inline Confirm/Cancel UI matching property delete pattern |
+| 11 | **CRITICAL** Cron reminder cron job used `!==` comparison for days-until-due, meaning reminders were never sent unless the due date fell on *exactly* the configured day | `app/api/cron/reminders/route.ts` | Changed `daysUntilDue !== reminderDaysBefore` to `daysUntilDue > reminderDaysBefore` so reminders fire within the window |
+| 12 | Settings test button sent `NEXT_PUBLIC_CRON_SECRET` from the client — this env var doesn't exist client-side, so the test always sent `Bearer test` and was rejected by production | `app/settings/reminders/page.tsx` | Created `/api/cron/test-run` server endpoint that injects the server-side `CRON_SECRET`; updated test button to POST to that endpoint |
+
 ### Known Remaining Issues (Non-Critical)
 
 | # | Issue | File | Priority |
@@ -537,6 +547,7 @@ To switch to production SMS: change `AFRICASTALKING_ENV=production` in Vercel en
 | 4 | Maintenance status change has no confirmation dialog | `app/maintenance/page.tsx` | Low |
 | 5 | Reconcile CSV amount match allows 0.99 UGX difference | `app/reconcile/page.tsx` | Medium |
 | 6 | Most CRUD pages don't display AppContext `error` state to user | Various | Medium |
+| 7 | Reminder settings (daysBefore, overdue toggle, etc.) stored in localStorage only — lost on browser clear / different device | `app/settings/reminders/page.tsx` | Medium |
 
 ---
 

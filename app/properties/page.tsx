@@ -5,12 +5,13 @@ import { useApp } from '../context/AppContext';
 import { formatUGX } from '../lib/utils';
 import { PropertyType, UnitStatus } from '../types';
 import Toast from '../components/Toast';
+import { PropertyCardSkeleton } from '../components/Skeleton';
 
 const PROPERTY_TYPES: PropertyType[] = ['Residential', 'Commercial', 'Mixed'];
 const UNIT_STATUSES: UnitStatus[] = ['Available', 'Occupied', 'Under_maintenance'];
 
 export default function PropertiesPage() {
-  const { properties, units, leases, applications, addProperty, updateProperty, deleteProperty, addUnit, updateUnit, deleteUnit } = useApp();
+  const { properties, units, leases, applications, loading, addProperty, updateProperty, deleteProperty, addUnit, updateUnit, deleteUnit } = useApp();
 
   const [showPropertyForm, setShowPropertyForm] = useState(false);
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
@@ -22,6 +23,7 @@ export default function PropertiesPage() {
 
   const [expandedProperty, setExpandedProperty] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteUnitConfirm, setDeleteUnitConfirm] = useState<string | null>(null);
   const [toast, setToast] = useState('');
 
   const pendingApps = applications.filter(a => a.status === 'Pending').length;
@@ -78,6 +80,18 @@ export default function PropertiesPage() {
     setShowUnitForm(u.property_id);
   };
 
+  const handleDeleteUnit = (id: string) => {
+    const hasActiveLease = leases.some(l => l.unit_id === id && l.status === 'Active');
+    if (hasActiveLease) {
+      alert('Cannot delete this unit — it has an active lease. Terminate the lease first.');
+      setDeleteUnitConfirm(null);
+      return;
+    }
+    deleteUnit(id);
+    setDeleteUnitConfirm(null);
+    setToast('Unit deleted');
+  };
+
   const handleUnitSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!unitForm.code) return;
@@ -104,9 +118,20 @@ export default function PropertiesPage() {
         <button onClick={openAddProperty} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">+ Add Property</button>
       </div>
 
-      {properties.length === 0 ? (
+      {loading ? (
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => <PropertyCardSkeleton key={i} />)}
+        </div>
+      ) : properties.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 text-lg">No properties yet. Add your first property to get started.</p>
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-700 mb-1">No properties yet</h3>
+          <p className="text-gray-500 text-sm mb-5">Add your first property to start tracking units, tenants, and rental income.</p>
+          <button onClick={openAddProperty} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm">+ Add First Property</button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -183,7 +208,14 @@ export default function PropertiesPage() {
                                 </td>
                                 <td className="py-2 px-3 text-right">
                                   <button onClick={() => openEditUnit(unit)} className="text-blue-600 hover:text-blue-800 text-sm mr-2">Edit</button>
-                                  <button onClick={() => deleteUnit(unit.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                                  {deleteUnitConfirm === unit.id ? (
+                                    <span className="inline-flex gap-1">
+                                      <button onClick={() => handleDeleteUnit(unit.id)} className="bg-red-600 text-white px-2 py-0.5 rounded text-xs font-medium">Confirm</button>
+                                      <button onClick={() => setDeleteUnitConfirm(null)} className="text-gray-600 px-2 py-0.5 rounded text-xs">Cancel</button>
+                                    </span>
+                                  ) : (
+                                    <button onClick={() => setDeleteUnitConfirm(unit.id)} className="text-red-600 hover:text-red-800 text-sm">Delete</button>
+                                  )}
                                 </td>
                               </tr>
                             ))}

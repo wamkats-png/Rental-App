@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useApp } from '../context/AppContext';
 import { useAuth } from './AuthProvider';
 import { useSubscription } from '../lib/useSubscription';
+import NotificationCenter from './NotificationCenter';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: 'H' },
@@ -34,9 +35,12 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
 
   return (
     <aside className="w-64 bg-blue-900 text-white min-h-screen flex flex-col">
-      <div className="p-4 border-b border-blue-800">
-        <h1 className="text-xl font-bold">RentFlow Uganda</h1>
-        <p className="text-blue-300 text-sm">Property Management</p>
+      <div className="p-4 border-b border-blue-800 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">RentFlow Uganda</h1>
+          <p className="text-blue-300 text-sm">Property Management</p>
+        </div>
+        <NotificationCenter />
       </div>
 
       {user && (

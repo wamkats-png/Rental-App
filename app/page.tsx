@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useApp } from './context/AppContext';
 import { formatUGX, daysUntil, formatDate } from './lib/utils';
+import { DashboardStatSkeleton } from './components/Skeleton';
 
 const RevenueChart = dynamic(() => import('./components/RevenueChart'), { ssr: false });
 
@@ -12,12 +13,17 @@ export default function Dashboard() {
   const router = useRouter();
   const { landlord, properties, units, tenants, leases, payments, maintenance, expenses, loading } = useApp();
 
-  // Redirect new users to onboarding
+  // Redirect brand-new users to onboarding.
+  // Only fires when loading is complete AND the landlord record has never been
+  // set up (id is empty = no row in DB and no local name set yet).
+  // Using landlord.id avoids false redirects when a user has a name but zero
+  // properties, and also prevents a redirect loop after the welcome wizard
+  // sets the name optimistically before the DB write completes.
   useEffect(() => {
-    if (!loading && properties.length === 0 && !landlord.name) {
+    if (!loading && !landlord.id && !landlord.name) {
       router.replace('/welcome');
     }
-  }, [loading, properties, landlord, router]);
+  }, [loading, landlord, router]);
 
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>('all');
 
@@ -75,7 +81,13 @@ export default function Dashboard() {
   const filteredPayments = filterByProperty(payments);
 
   const overduePayments = activeLeases.filter(l => {
-    const gracePeriodEnd = new Date(now.getFullYear(), now.getMonth(), l.due_day + l.grace_period_days);
+    // Cap due_day to actual days in the current month (e.g. Feb has 28/29 days)
+    const daysInCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const cappedDueDay = Math.min(l.due_day, daysInCurrentMonth);
+    const dueDate = new Date(now.getFullYear(), now.getMonth(), cappedDueDay);
+    // Add grace period days using proper date arithmetic (avoids month-boundary overflow)
+    const gracePeriodEnd = new Date(dueDate);
+    gracePeriodEnd.setDate(gracePeriodEnd.getDate() + (l.grace_period_days || 0));
     const hasPaymentThisMonth = filteredPayments.some(p => {
       const pDate = new Date(p.date);
       return p.lease_id === l.id &&
@@ -159,26 +171,37 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <p className="text-xs md:text-sm text-gray-500 mb-1">Monthly Revenue</p>
-          <p className="text-xl md:text-2xl font-bold text-gray-800">{formatUGX(collectedThisMonth)}</p>
-          <div className="h-1 bg-green-500 rounded mt-3" />
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <p className="text-xs md:text-sm text-gray-500 mb-1">Occupancy</p>
-          <p className="text-xl md:text-2xl font-bold text-gray-800">{occupancyRate}%</p>
-          <div className="h-1 bg-blue-500 rounded mt-3" style={{ width: `${occupancyRate}%` }} />
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <p className="text-xs md:text-sm text-gray-500 mb-1">Overdue</p>
-          <p className="text-xl md:text-2xl font-bold text-red-600">{overduePayments}</p>
-          <div className="h-1 bg-red-500 rounded mt-3" />
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          <p className="text-xs md:text-sm text-gray-500 mb-1">Monthly Expenses</p>
-          <p className="text-xl md:text-2xl font-bold text-orange-600">{formatUGX(totalExpensesThisMonth)}</p>
-          <div className="h-1 bg-orange-500 rounded mt-3" />
-        </div>
+        {loading ? (
+          <>
+            <DashboardStatSkeleton />
+            <DashboardStatSkeleton />
+            <DashboardStatSkeleton />
+            <DashboardStatSkeleton />
+          </>
+        ) : (
+          <>
+            <div className="bg-white rounded-lg shadow p-4 md:p-6">
+              <p className="text-xs md:text-sm text-gray-500 mb-1">Monthly Revenue</p>
+              <p className="text-xl md:text-2xl font-bold text-gray-800">{formatUGX(collectedThisMonth)}</p>
+              <div className="h-1 bg-green-500 rounded mt-3" />
+            </div>
+            <div className="bg-white rounded-lg shadow p-4 md:p-6">
+              <p className="text-xs md:text-sm text-gray-500 mb-1">Occupancy</p>
+              <p className="text-xl md:text-2xl font-bold text-gray-800">{occupancyRate}%</p>
+              <div className="h-1 bg-blue-500 rounded mt-3" style={{ width: `${occupancyRate}%` }} />
+            </div>
+            <div className="bg-white rounded-lg shadow p-4 md:p-6">
+              <p className="text-xs md:text-sm text-gray-500 mb-1">Overdue</p>
+              <p className="text-xl md:text-2xl font-bold text-red-600">{overduePayments}</p>
+              <div className="h-1 bg-red-500 rounded mt-3" />
+            </div>
+            <div className="bg-white rounded-lg shadow p-4 md:p-6">
+              <p className="text-xs md:text-sm text-gray-500 mb-1">Monthly Expenses</p>
+              <p className="text-xl md:text-2xl font-bold text-orange-600">{formatUGX(totalExpensesThisMonth)}</p>
+              <div className="h-1 bg-orange-500 rounded mt-3" />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -292,9 +315,16 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {totalProperties === 0 && (
+      {!loading && totalProperties === 0 && (
         <div className="bg-white rounded-lg shadow p-12 text-center mt-6">
-          <p className="text-gray-500 text-lg">No properties yet. Add your first property to get started.</p>
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-700 mb-1">Welcome to RentFlow Uganda</h3>
+          <p className="text-gray-500 text-sm mb-5">Start by adding your first property — then add units, tenants, and leases to unlock full analytics.</p>
+          <a href="/properties" className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm">+ Add First Property</a>
         </div>
       )}
     </div>

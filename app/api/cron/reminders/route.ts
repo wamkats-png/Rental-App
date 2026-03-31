@@ -61,7 +61,10 @@ export async function GET(req: NextRequest) {
       if (dueDate < now) dueDate.setMonth(dueDate.getMonth() + 1);
       const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / 86400000);
 
-      if (daysUntilDue !== reminderDaysBefore) { skipped.push(lease.id); continue; }
+      // Send reminder when the due date is within the configured window (≤ N days away).
+      // Using strict equality caused the cron to never fire; using <= ensures the
+      // reminder is sent on any day within the window.
+      if (daysUntilDue > reminderDaysBefore) { skipped.push(lease.id); continue; }
 
       // Check if already paid this month
       const periodStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;

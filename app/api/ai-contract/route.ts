@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
-
-let openai: OpenAI | null = null;
-function getOpenAI() {
-  if (!openai) openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return openai;
-}
+import Anthropic from '@anthropic-ai/sdk';
 
 const SYSTEM_PROMPT = `You are a Ugandan property rental contract specialist. You help landlords create and extract information from rental/tenancy agreements under Ugandan law.
 
@@ -46,66 +40,69 @@ Use proper HTML formatting with <h1>, <h2>, <p>, <ol>, <li> tags. Style it profe
 
 If information is missing from the user's input, use reasonable defaults for Uganda (e.g., standard 30-day notice, tenant pays utilities, etc.) but note what was assumed.
 
-IMPORTANT: Always respond with valid JSON only. No markdown, no extra text.`;
+IMPORTANT: Always respond with valid JSON only. No markdown, no extra text, no code fences.`;
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { mode, text, imageBase64 } = body;
-
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured. Add OPENAI_API_KEY to your .env file.' },
+        { error: 'Anthropic API key not configured. Add ANTHROPIC_API_KEY to your .env.local file.' },
         { status: 500 }
       );
     }
 
-    let messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
-    ];
+    const body = await req.json();
+    const { mode, text, imageBase64 } = body;
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    let userContent: Anthropic.MessageParam['content'];
 
     if (mode === 'image' && imageBase64) {
-      messages.push({
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: 'Extract all contract/lease information from this image of a physical rental contract. Return the structured JSON with all fields including a generated contract_html based on the extracted information.',
-          },
-          {
-            type: 'image_url',
-            image_url: { url: imageBase64, detail: 'high' },
-          },
-        ],
-      });
+      // Strip the data URL prefix to get raw base64 and media type
+      const matches = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return NextResponse.json({ error: 'Invalid image format.' }, { status: 400 });
+      }
+      const mediaType = matches[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+      const base64Data = matches[2];
+
+      userContent = [
+        {
+          type: 'text',
+          text: 'Extract all contract/lease information from this image of a physical rental contract. Return the structured JSON with all fields including a generated contract_html based on the extracted information.',
+        },
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: base64Data },
+        },
+      ];
     } else if (mode === 'text' && text) {
-      messages.push({
-        role: 'user',
-        content: `Generate a complete rental contract from this description: "${text}"\n\nReturn structured JSON with all fields including contract_html.`,
-      });
+      userContent = `Generate a complete rental contract from this description: "${text}"\n\nReturn structured JSON with all fields including contract_html.`;
     } else {
       return NextResponse.json(
-        { error: 'Please provide either text description or an image.' },
+        { error: 'Please provide either a text description or an image.' },
         { status: 400 }
       );
     }
 
-    const response = await getOpenAI().chat.completions.create({
-      model: 'gpt-4o',
-      messages,
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userContent }],
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.content[0].type === 'text' ? response.content[0].text : '';
     if (!content) {
       return NextResponse.json({ error: 'No response from AI' }, { status: 500 });
     }
 
-    const parsed = JSON.parse(content);
+    // Strip any accidental markdown code fences before parsing
+    const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(cleaned);
 
-    // Sanitize contract_html server-side: strip script tags and inline event handlers
+    // Sanitize contract_html: strip script tags and inline event handlers
     if (typeof parsed.contract_html === 'string') {
       parsed.contract_html = parsed.contract_html
         .replace(/<script[\s\S]*?<\/script>/gi, '')

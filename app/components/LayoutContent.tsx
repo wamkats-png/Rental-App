@@ -4,11 +4,17 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import GlobalSearch from './GlobalSearch';
+import Toast from './Toast';
+import NotificationCenter from './NotificationCenter';
+import { useApp } from '../context/AppContext';
 
 export default function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const { error: appError, toast, dismissToast } = useApp();
+  const visibleError = appError && appError !== dismissedError ? appError : null;
 
   const isAuthPage = pathname === '/login' || pathname?.startsWith('/auth/') || pathname === '/forgot-password' || pathname === '/welcome';
 
@@ -66,6 +72,7 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
             </svg>
           </button>
           <span className="font-semibold text-sm flex-1">RentFlow Uganda</span>
+          <NotificationCenter />
           <button
             onClick={() => setSearchOpen(true)}
             className="p-1.5 rounded hover:bg-blue-800 transition-colors"
@@ -77,12 +84,23 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
           </button>
         </div>
 
+        {visibleError && (
+          <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex items-center justify-between text-sm text-red-700">
+            <span>{visibleError}</span>
+            <button
+              onClick={() => setDismissedError(visibleError)}
+              className="ml-4 text-red-500 hover:text-red-700 font-bold text-lg leading-none"
+              aria-label="Dismiss"
+            >&times;</button>
+          </div>
+        )}
         <main className="flex-1 p-4 md:p-6 overflow-auto">
           {children}
         </main>
       </div>
 
       {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} />}
+      {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />}
     </div>
   );
 }

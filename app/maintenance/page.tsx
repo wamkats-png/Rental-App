@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { formatUGX, formatDate } from '../lib/utils';
 import { exportToCSV } from '../lib/csvExport';
 import Toast from '../components/Toast';
+import { MaintenanceRowSkeleton } from '../components/Skeleton';
 import { MaintenanceCategory, MaintenancePayer, MaintenanceStatus, MaintenancePriority } from '../types';
 
 const CATEGORIES: MaintenanceCategory[] = ['Plumbing', 'Electrical', 'Structural', 'Other'];
@@ -39,7 +40,7 @@ const defaultForm = {
 };
 
 export default function MaintenancePage() {
-  const { properties, units, maintenance, landlord, addMaintenance, updateMaintenance, deleteMaintenance } = useApp();
+  const { properties, units, maintenance, loading, landlord, addMaintenance, updateMaintenance, deleteMaintenance } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
@@ -186,9 +187,38 @@ export default function MaintenancePage() {
         ))}
       </div>
 
-      {sorted.length === 0 ? (
+      {loading ? (
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {[...Array(4)].map((_, i) => <MaintenanceRowSkeleton key={i} />)}
+            </tbody>
+          </table>
+        </div>
+      ) : sorted.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 text-lg">{maintenance.length === 0 ? 'No maintenance records yet.' : 'No records match filters.'}</p>
+          {maintenance.length === 0 ? (
+            <>
+              <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">No maintenance requests yet</h3>
+              <p className="text-gray-500 text-sm mb-5">Log repairs and maintenance jobs to track costs, status, and vendor assignments.</p>
+              <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm">+ Log First Request</button>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 010 2H4a1 1 0 01-1-1z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">No records match filters</h3>
+              <p className="text-gray-500 text-sm">Try changing the status, priority, or category filter.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

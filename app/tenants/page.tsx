@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatDate, calculateTenantScore } from '../lib/utils';
 import Toast from '../components/Toast';
+import { TenantRowSkeleton } from '../components/Skeleton';
 import { exportToCSV } from '../lib/csvExport';
 import { CommPreference, CommunicationType } from '../types';
+import { validateTenant } from '../lib/schemas';
 
 const COMM_PREFS: CommPreference[] = ['WhatsApp', 'Email', 'SMS'];
 const COMM_TYPES: CommunicationType[] = ['SMS', 'Email', 'Call', 'WhatsApp'];
@@ -15,7 +17,7 @@ const defaultForm = {
 };
 
 export default function TenantsPage() {
-  const { tenants, addTenant, updateTenant, deleteTenant, communicationLogs, addCommunicationLog, payments, leases } = useApp();
+  const { tenants, loading, addTenant, updateTenant, deleteTenant, communicationLogs, addCommunicationLog, payments, leases } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
@@ -24,23 +26,31 @@ export default function TenantsPage() {
   const [selectedTenant, setSelectedTenant] = useState<string | null>(null);
   const [commForm, setCommForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'WhatsApp' as CommunicationType, note: '' });
   const [toast, setToast] = useState('');
+  const [formErrors, setFormErrors] = useState<Partial<Record<'full_name' | 'phone' | 'email', string>>>({});
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const filtered = tenants.filter(t =>
     t.full_name.toLowerCase().includes(search.toLowerCase()) ||
     t.phone.includes(search) ||
     t.email.toLowerCase().includes(search.toLowerCase())
   );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const openAdd = () => { setEditingId(null); setForm(defaultForm); setShowModal(true); };
+  const openAdd = () => { setEditingId(null); setForm(defaultForm); setFormErrors({}); setShowModal(true); };
   const openEdit = (t: typeof tenants[0]) => {
     setEditingId(t.id);
     setForm({ full_name: t.full_name, phone: t.phone, email: t.email, national_id: t.national_id, address: t.address, comm_preference: t.comm_preference });
+    setFormErrors({});
     setShowModal(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.full_name) return;
+    const result = validateTenant({ full_name: form.full_name, phone: form.phone, email: form.email });
+    if (!result.valid) { setFormErrors(result.errors); return; }
+    setFormErrors({});
     if (editingId) {
       updateTenant(editingId, form);
     } else {
@@ -89,20 +99,49 @@ export default function TenantsPage() {
       </div>
 
       <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name, phone, or email..." className="w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+        <input type="text" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, phone, or email..." className="w-full border rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={selectedTenant ? 'lg:col-span-2' : 'lg:col-span-3'}>
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="bg-white rounded-lg shadow overflow-x-auto">
+              <table className="w-full text-sm">
+                <tbody>
+                  {[...Array(5)].map((_, i) => <TenantRowSkeleton key={i} />)}
+                </tbody>
+              </table>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-12 text-center">
-              <p className="text-gray-500 text-lg">{tenants.length === 0 ? 'No tenants yet.' : 'No tenants match search.'}</p>
+              {tenants.length === 0 ? (
+                <>
+                  <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-1">No tenants yet</h3>
+                  <p className="text-gray-500 text-sm mb-5">Add tenants to track their leases, payments, and communication history.</p>
+                  <button onClick={openAdd} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm">+ Add First Tenant</button>
+                </>
+              ) : (
+                <>
+                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-1">No tenants match your search</h3>
+                  <p className="text-gray-500 text-sm">Try a different name, phone number, or email address.</p>
+                </>
+              )}
             </div>
           ) : (
             <>
               {/* Mobile cards */}
               <div className="md:hidden space-y-3">
-                {filtered.map(t => (
+                {paginated.map(t => (
                   <div
                     key={t.id}
                     className={`bg-white rounded-lg shadow p-4 cursor-pointer transition-colors ${selectedTenant === t.id ? 'ring-2 ring-blue-500' : ''}`}
@@ -147,7 +186,7 @@ export default function TenantsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map(t => (
+                    {paginated.map(t => (
                       <tr key={t.id} className={`border-b border-gray-50 hover:bg-gray-50 cursor-pointer ${selectedTenant === t.id ? 'bg-blue-50' : ''}`} onClick={() => setSelectedTenant(selectedTenant === t.id ? null : t.id)}>
                         <td className="py-3 px-4 font-medium">{t.full_name}</td>
                         <td className="py-3 px-4">{t.phone}</td>
@@ -179,6 +218,15 @@ export default function TenantsPage() {
                 </table>
               </div>
             </>
+          )}
+          {!loading && filtered.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between mt-4 px-1">
+              <p className="text-sm text-gray-500">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</p>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 text-sm rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition">Previous</button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 text-sm rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition">Next</button>
+              </div>
+            </div>
           )}
         </div>
 
@@ -250,16 +298,19 @@ export default function TenantsPage() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-                <input type="text" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="John Doe" />
+                <input type="text" value={form.full_name} onChange={e => { setForm({ ...form, full_name: e.target.value }); setFormErrors(prev => ({ ...prev, full_name: undefined })); }} className={`w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${formErrors.full_name ? 'border-red-400' : ''}`} placeholder="John Doe" />
+                {formErrors.full_name && <p className="text-red-500 text-xs mt-1">{formErrors.full_name}</p>}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                  <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="+256 700 000 000" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+                  <input type="tel" value={form.phone} onChange={e => { setForm({ ...form, phone: e.target.value }); setFormErrors(prev => ({ ...prev, phone: undefined })); }} className={`w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${formErrors.phone ? 'border-red-400' : ''}`} placeholder="0701234567" />
+                  {formErrors.phone && <p className="text-red-500 text-xs mt-1">{formErrors.phone}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="email@example.com" />
+                  <input type="text" value={form.email} onChange={e => { setForm({ ...form, email: e.target.value }); setFormErrors(prev => ({ ...prev, email: undefined })); }} className={`w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent ${formErrors.email ? 'border-red-400' : ''}`} placeholder="email@example.com" />
+                  {formErrors.email && <p className="text-red-500 text-xs mt-1">{formErrors.email}</p>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

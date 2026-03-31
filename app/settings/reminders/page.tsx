@@ -46,11 +46,15 @@ export default function ReminderSettingsPage() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/cron/reminders', {
-        headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET ?? 'test'}` },
-      });
+      // POST to /api/cron/test-run which injects the server-side CRON_SECRET,
+      // so the client never needs to know or expose it.
+      const res = await fetch('/api/cron/test-run', { method: 'POST' });
       const data = await res.json();
-      setTestResult(`Processed: ${data.sent ?? 0} sent, ${data.skipped ?? 0} skipped`);
+      if (!res.ok) {
+        setTestResult(`Error: ${data.error ?? 'Unknown error'}`);
+      } else {
+        setTestResult(`Processed: ${data.sent ?? 0} sent, ${data.skipped ?? 0} skipped`);
+      }
     } catch (e: any) {
       setTestResult(`Error: ${e.message}`);
     } finally {

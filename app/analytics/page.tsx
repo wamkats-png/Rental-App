@@ -17,6 +17,14 @@ function monthLabel(year: number, month: number) {
 export default function AnalyticsPage() {
   const { units, leases, payments, properties, tenants } = useApp();
 
+  // ── Current Active Unit IDs (lease-based, not unit.status) ───────────────
+  const currentActiveUnitIds = useMemo(() => {
+    const active = leases.filter(l =>
+      ['Active', 'Pending_tenant_signature', 'Pending_landlord_signature'].includes(l.status)
+    );
+    return new Set(active.map(l => l.unit_id));
+  }, [leases]);
+
   // ── Occupancy Analytics ──────────────────────────────────────────────────
   const occupancyData = useMemo(() => {
     const now = new Date();
@@ -89,7 +97,7 @@ export default function AnalyticsPage() {
   const propertyComparison = useMemo(() => {
     return properties.map(prop => {
       const propUnits = units.filter(u => u.property_id === prop.id);
-      const occupied = propUnits.filter(u => u.status === 'Occupied').length;
+      const occupied = propUnits.filter(u => currentActiveUnitIds.has(u.id)).length;
       const revenue = payments
         .filter(p => p.property_id === prop.id)
         .reduce((s, p) => s + p.amount, 0);
@@ -101,11 +109,12 @@ export default function AnalyticsPage() {
         revenue,
       };
     });
-  }, [properties, units, payments]);
+  }, [properties, units, payments, currentActiveUnitIds]);
 
   // ── Summary Stats ─────────────────────────────────────────────────────────
+  const currentOccupied = currentActiveUnitIds.size;
   const currentOccupancy = units.length > 0
-    ? Math.round((units.filter(u => u.status === 'Occupied').length / units.length) * 100)
+    ? Math.round((currentOccupied / units.length) * 100)
     : 0;
 
   const totalRevenueLTM = payments.reduce((s, p) => s + p.amount, 0);
@@ -113,7 +122,7 @@ export default function AnalyticsPage() {
   const forecastNextMonth = forecastData[0]?.forecast ?? 0;
 
   const STAT_CARDS = [
-    { label: 'Current Occupancy', value: `${currentOccupancy}%`, sub: `${units.filter(u => u.status === 'Occupied').length}/${units.length} units`, color: 'bg-blue-50 text-blue-700' },
+    { label: 'Current Occupancy', value: `${currentOccupancy}%`, sub: `${currentOccupied}/${units.length} units`, color: 'bg-blue-50 text-blue-700' },
     { label: 'Avg Monthly Revenue', value: formatUGX(avgMonthlyRevenue), sub: 'Last 12 months', color: 'bg-green-50 text-green-700' },
     { label: 'Next Month Forecast', value: formatUGX(forecastNextMonth), sub: 'Based on active leases', color: 'bg-purple-50 text-purple-700' },
     { label: 'Total Tenants', value: String(tenants.length), sub: `${leases.filter(l => l.status === 'Active').length} active leases`, color: 'bg-orange-50 text-orange-700' },

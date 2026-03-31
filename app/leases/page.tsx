@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatUGX, formatDate, daysUntil } from '../lib/utils';
 import Toast from '../components/Toast';
+import { LeaseRowSkeleton } from '../components/Skeleton';
 import { ContractType, PaymentFrequency, UtilitiesResponsibility, LeaseStatus } from '../types';
 
 const CONTRACT_TYPES: ContractType[] = ['Residential', 'Commercial', 'Other'];
@@ -47,7 +48,7 @@ const defaultForm = {
 };
 
 export default function LeasesPage() {
-  const { properties, units, tenants, leases, addLease, updateLease, deleteLease, updateUnit } = useApp();
+  const { properties, units, tenants, leases, loading, addLease, updateLease, deleteLease, updateUnit } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
@@ -170,7 +171,7 @@ export default function LeasesPage() {
           <h1 className="text-2xl font-bold text-gray-800">Leases</h1>
           <p className="text-sm text-gray-500 mt-1">Manage lease agreements</p>
         </div>
-        <button onClick={openAdd} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">+ Add Lease</button>
+        <button id="add-lease-btn" onClick={openAdd} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">+ Add Lease</button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -203,9 +204,38 @@ export default function LeasesPage() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {[...Array(4)].map((_, i) => <LeaseRowSkeleton key={i} />)}
+            </tbody>
+          </table>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 text-lg">{leases.length === 0 ? 'No leases yet.' : 'No leases match filter.'}</p>
+          {leases.length === 0 ? (
+            <>
+              <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">No leases yet</h3>
+              <p className="text-gray-500 text-sm mb-5">Create a lease agreement to start tracking rent, due dates, and payment history.</p>
+              <button onClick={() => { /* openAddLease is triggered by the top button */ document.getElementById('add-lease-btn')?.click(); }} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm">+ Create First Lease</button>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 010 2H4a1 1 0 01-1-1z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">No leases match filter</h3>
+              <p className="text-gray-500 text-sm">Try changing the status filter to see more results.</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

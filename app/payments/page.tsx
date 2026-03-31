@@ -6,19 +6,23 @@ import { formatUGX, formatDate } from '../lib/utils';
 import { exportToCSV } from '../lib/csvExport';
 import { PaymentMethod } from '../types';
 import Toast from '../components/Toast';
+import { PaymentRowSkeleton } from '../components/Skeleton';
 import { downloadReceiptPDF } from '../lib/pdfReceipt';
+import { validatePayment } from '../lib/schemas';
 
 const PAYMENT_METHODS: PaymentMethod[] = ['Cash', 'Mobile_Money', 'Bank'];
 
-function generateReceiptNumber() {
+function generateReceiptNumber(landlordId?: string) {
   const now = new Date();
   const date = now.toISOString().split('T')[0].replace(/-/g, '');
   const rand = Math.floor(1000 + Math.random() * 9000);
-  return `RF-${date}-${rand}`;
+  // Include a landlord-specific prefix so receipt numbers are globally unique
+  const prefix = landlordId ? landlordId.replace(/-/g, '').slice(0, 6).toUpperCase() : 'RF';
+  return `${prefix}-${date}-${rand}`;
 }
 
 export default function PaymentsPage() {
-  const { properties, units, tenants, leases, payments, addPayment, deletePayment } = useApp();
+  const { landlord, properties, units, tenants, leases, payments, loading, addPayment, deletePayment } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [showReceipt, setShowReceipt] = useState<string | null>(null);
   const [filterMonth, setFilterMonth] = useState('');
@@ -26,13 +30,16 @@ export default function PaymentsPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [formErrors, setFormErrors] = useState<Partial<Record<'lease_id' | 'amount' | 'date' | 'payment_method', string>>>({});
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const activeLeases = leases.filter(l => l.status === 'Active');
   const today = new Date().toISOString().split('T')[0];
 
   const [form, setForm] = useState({
     lease_id: '', date: today, amount: 0, payment_method: 'Mobile_Money' as PaymentMethod,
-    period_start: '', period_end: '', withholding_tax_amount: 0, receipt_number: generateReceiptNumber(),
+    period_start: '', period_end: '', withholding_tax_amount: 0, receipt_number: generateReceiptNumber(landlord.id),
   });
 
   const selectedLease = activeLeases.find(l => l.id === form.lease_id);
@@ -65,7 +72,9 @@ export default function PaymentsPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.lease_id || !form.date || form.amount <= 0) return;
+    const result = validatePayment({ lease_id: form.lease_id, amount: form.amount, date: form.date, payment_method: form.payment_method });
+    if (!result.valid) { setFormErrors(result.errors); return; }
+    setFormErrors({});
     const lease = activeLeases.find(l => l.id === form.lease_id);
     if (!lease) return;
     addPayment({
@@ -86,7 +95,7 @@ export default function PaymentsPage() {
       }).catch(() => {}); // silent fail — don't block UI
     }
 
-    setForm({ lease_id: '', date: today, amount: 0, payment_method: 'Mobile_Money', period_start: '', period_end: '', withholding_tax_amount: 0, receipt_number: generateReceiptNumber() });
+    setForm({ lease_id: '', date: today, amount: 0, payment_method: 'Mobile_Money', period_start: '', period_end: '', withholding_tax_amount: 0, receipt_number: generateReceiptNumber(landlord.id) });
     setShowModal(false);
     setToast('Payment recorded successfully');
   };
@@ -95,6 +104,8 @@ export default function PaymentsPage() {
   if (filterMonth) filteredPayments = filteredPayments.filter(p => p.date.startsWith(filterMonth));
   if (filterTenant) filteredPayments = filteredPayments.filter(p => p.tenant_id === filterTenant);
   const sortedPayments = [...filteredPayments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const totalPages = Math.max(1, Math.ceil(sortedPayments.length / PAGE_SIZE));
+  const paginatedPayments = sortedPayments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const totalFiltered = sortedPayments.reduce((s, p) => s + p.amount, 0);
   const totalWHT = sortedPayments.reduce((s, p) => s + p.withholding_tax_amount, 0);
@@ -132,7 +143,7 @@ export default function PaymentsPage() {
         </div>
         <div className="flex gap-2">
           <button onClick={handleExport} className="bg-gray-100 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-200 transition font-medium text-sm hidden sm:block">Export CSV</button>
-          <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-4 sm:px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm sm:text-base">+ Record Payment</button>
+          <button onClick={() => { setFormErrors({}); setShowModal(true); }} className="bg-blue-600 text-white px-4 sm:px-5 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm sm:text-base">+ Record Payment</button>
         </div>
       </div>
 
@@ -154,29 +165,58 @@ export default function PaymentsPage() {
       <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap gap-4">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Month</label>
-          <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
+          <select value={filterMonth} onChange={e => { setFilterMonth(e.target.value); setPage(1); }} className="border rounded-lg px-3 py-2 text-sm">
             <option value="">All months</option>
             {months.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Tenant</label>
-          <select value={filterTenant} onChange={e => setFilterTenant(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
+          <select value={filterTenant} onChange={e => { setFilterTenant(e.target.value); setPage(1); }} className="border rounded-lg px-3 py-2 text-sm">
             <option value="">All tenants</option>
             {tenants.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
           </select>
         </div>
       </div>
 
-      {sortedPayments.length === 0 ? (
+      {loading ? (
+        <div className="bg-white rounded-lg shadow overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {[...Array(6)].map((_, i) => <PaymentRowSkeleton key={i} />)}
+            </tbody>
+          </table>
+        </div>
+      ) : sortedPayments.length === 0 ? (
         <div className="bg-white rounded-lg shadow p-12 text-center">
-          <p className="text-gray-500 text-lg">{payments.length === 0 ? 'No payments recorded yet.' : 'No payments match filters.'}</p>
+          {payments.length === 0 ? (
+            <>
+              <div className="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">No payments recorded yet</h3>
+              <p className="text-gray-500 text-sm mb-5">Record a payment when a tenant pays rent to generate a receipt and update their balance.</p>
+              <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition font-medium text-sm">+ Record First Payment</button>
+            </>
+          ) : (
+            <>
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h16a1 1 0 010 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h10a1 1 0 010 2H4a1 1 0 01-1-1z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">No payments match filters</h3>
+              <p className="text-gray-500 text-sm">Try changing the month or tenant filter to see more results.</p>
+            </>
+          )}
         </div>
       ) : (
         <>
           {/* Mobile card list */}
           <div className="md:hidden space-y-3">
-            {sortedPayments.map(p => (
+            {paginatedPayments.map(p => (
               <div key={p.id} className="bg-white rounded-lg shadow p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0 flex-1">
@@ -220,7 +260,7 @@ export default function PaymentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedPayments.map(p => (
+                {paginatedPayments.map(p => (
                   <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="py-3 px-4">{formatDate(p.date)}</td>
                     <td className="py-3 px-4 font-medium">{tenants.find(t => t.id === p.tenant_id)?.full_name || 'Unknown'}</td>
@@ -244,6 +284,15 @@ export default function PaymentsPage() {
               </tbody>
             </table>
           </div>
+          {!loading && sortedPayments.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between mt-4 px-1">
+              <p className="text-sm text-gray-500">Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedPayments.length)} of {sortedPayments.length}</p>
+              <div className="flex gap-2">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 text-sm rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition">Previous</button>
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1.5 text-sm rounded border border-gray-300 disabled:opacity-40 hover:bg-gray-50 transition">Next</button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -258,7 +307,7 @@ export default function PaymentsPage() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Lease (Active) *</label>
-                <select value={form.lease_id} onChange={e => handleLeaseChange(e.target.value)} required className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                <select value={form.lease_id} onChange={e => { handleLeaseChange(e.target.value); setFormErrors(prev => ({ ...prev, lease_id: undefined })); }} className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 ${formErrors.lease_id ? 'border-red-400' : ''}`}>
                   <option value="">Select lease</option>
                   {activeLeases.map(l => {
                     const t = tenants.find(x => x.id === l.tenant_id);
@@ -267,6 +316,7 @@ export default function PaymentsPage() {
                     return <option key={l.id} value={l.id}>{t?.full_name} - {p?.name} / {u?.code} ({formatUGX(l.rent_amount)})</option>;
                   })}
                 </select>
+                {formErrors.lease_id && <p className="text-red-500 text-xs mt-1">{formErrors.lease_id}</p>}
               </div>
               {suggestedLateFee > 0 && (
                 <div className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
@@ -283,11 +333,13 @@ export default function PaymentsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-                  <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                  <input type="date" value={form.date} onChange={e => { setForm({ ...form, date: e.target.value }); setFormErrors(prev => ({ ...prev, date: undefined })); }} className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 ${formErrors.date ? 'border-red-400' : ''}`} />
+                  {formErrors.date && <p className="text-red-500 text-xs mt-1">{formErrors.date}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount *</label>
-                  <input type="number" value={form.amount || ''} onChange={e => handleAmountChange(Number(e.target.value))} required min={1} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Amount (UGX) *</label>
+                  <input type="number" value={form.amount || ''} onChange={e => { handleAmountChange(Number(e.target.value)); setFormErrors(prev => ({ ...prev, amount: undefined })); }} min={1} className={`w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 ${formErrors.amount ? 'border-red-400' : ''}`} />
+                  {formErrors.amount && <p className="text-red-500 text-xs mt-1">{formErrors.amount}</p>}
                 </div>
               </div>
               <div>

@@ -252,7 +252,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Data Management</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Manage your locally stored application data.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Clear cached data from your browser. Your Supabase data is not affected.</p>
             </div>
           </div>
 
@@ -265,11 +265,11 @@ export default function SettingsPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                Clear All Data
+                Clear Local Cache
               </button>
               <p className="mt-3 text-sm text-gray-500">
-                This will permanently remove all locally stored data including properties, tenants,
-                leases, payments, and settings. This action cannot be undone.
+                Clears any locally cached keys from your browser (prefixed with <code className="text-xs bg-gray-100 px-1 rounded">rf_</code>).
+                Your actual data in Supabase is safe and will reload on the next page visit.
               </p>
             </div>
           ) : (
@@ -280,18 +280,18 @@ export default function SettingsPage() {
                 </svg>
                 <div>
                   <h3 className="text-sm font-semibold text-red-800">
-                    Are you sure you want to clear all data?
+                    Clear local browser cache?
                   </h3>
                   <p className="mt-1 text-sm text-red-700">
-                    All properties, tenants, leases, payments, maintenance records, and profile
-                    information will be permanently deleted. This action cannot be undone.
+                    This removes locally cached keys from your browser only. Your data in Supabase
+                    remains intact and will reload automatically.
                   </p>
                   <div className="mt-4 flex items-center gap-3">
                     <button
                       onClick={handleClearData}
                       className="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
                     >
-                      Yes, Clear All Data
+                      Yes, Clear Cache
                     </button>
                     <button
                       onClick={() => setShowClearConfirm(false)}
