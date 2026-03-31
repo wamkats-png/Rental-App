@@ -49,10 +49,10 @@ interface AppContextType {
   toast: { message: string; type: 'success' | 'error' } | null;
   dismissToast: () => void;
   updateLandlord: (data: Partial<Landlord>) => void;
-  addProperty: (p: Omit<Property, 'id' | 'landlord_id' | 'created_at'>) => void;
+  addProperty: (p: Omit<Property, 'id' | 'landlord_id' | 'created_at'>) => Promise<Property | undefined>;
   updateProperty: (id: string, p: Partial<Property>) => void;
   deleteProperty: (id: string) => void;
-  addUnit: (u: Omit<Unit, 'id' | 'created_at'>) => void;
+  addUnit: (u: Omit<Unit, 'id' | 'created_at'>) => Promise<Unit | undefined>;
   updateUnit: (id: string, u: Partial<Unit>) => void;
   deleteUnit: (id: string) => void;
   addTenant: (t: Omit<Tenant, 'id' | 'landlord_id' | 'created_at'>) => void;
@@ -198,7 +198,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [user, showToast]);
 
-  const addProperty = useCallback(async (p: Omit<Property, 'id' | 'landlord_id' | 'created_at'>) => {
+  const addProperty = useCallback(async (p: Omit<Property, 'id' | 'landlord_id' | 'created_at'>): Promise<Property | undefined> => {
     try {
       setError(null);
       // Prevent duplicate property names for this landlord
@@ -206,16 +206,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         existing => existing.name.trim().toLowerCase() === p.name.trim().toLowerCase()
       );
       if (isDuplicate) {
-        setError(`A property named "${p.name}" already exists.`);
-        return;
+        // Return the existing property so callers can still get the ID
+        return properties.find(existing => existing.name.trim().toLowerCase() === p.name.trim().toLowerCase());
       }
       if (supabase && user) {
         const newProp = await insertProperty({ ...p, landlord_id: user.id });
         setProperties(prev => [newProp, ...prev]);
         insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'property', entity_id: newProp.id, summary: `Added property: ${p.name}` });
         showToast('Property added');
+        return newProp;
       }
     } catch (err: any) { console.error('[RentFlow] addProperty:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    return undefined;
   }, [user, properties, showToast]);
 
   const updateProperty = useCallback(async (id: string, p: Partial<Property>) => {
@@ -237,15 +239,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [showToast]);
 
-  const addUnit = useCallback(async (u: Omit<Unit, 'id' | 'created_at'>) => {
+  const addUnit = useCallback(async (u: Omit<Unit, 'id' | 'created_at'>): Promise<Unit | undefined> => {
     try {
       setError(null);
       if (supabase) {
         const newUnit = await insertUnit(u);
         setUnits(prev => [newUnit, ...prev]);
         showToast('Unit added');
+        return newUnit;
       }
     } catch (err: any) { console.error('[RentFlow] addUnit:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    return undefined;
   }, [showToast]);
 
   const updateUnit = useCallback(async (id: string, u: Partial<Unit>) => {

@@ -1,0 +1,71 @@
+
+> rentflow-uganda@1.0.0 dev
+> next dev
+
+   ▲ Next.js 15.5.14
+   - Local:        http://localhost:3000
+   - Network:      http://10.2.0.2:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 6.9s
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 858ms (166 modules)
+ ○ Compiling / ...
+<w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (215kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+ ✓ Compiled / in 12.1s (1699 modules)
+ GET / 200 in 12472ms
+ ✓ Compiled in 526ms (783 modules)
+ GET / 200 in 65ms
+ ○ Compiling /welcome ...
+ ✓ Compiled /welcome in 843ms (1690 modules)
+ GET /login 200 in 987ms
+ GET /welcome 200 in 854ms
+ GET /login 200 in 32ms
+ GET /login 200 in 27ms
+ GET /login 200 in 27ms
+ ✓ Compiled /properties in 329ms (1697 modules)
+ GET /properties 200 in 515ms
+ GET /login 200 in 32ms
+ GET /login 200 in 22ms
+ ✓ Compiled /tenants in 278ms (1708 modules)
+ GET /tenants 200 in 421ms
+ GET /login 200 in 27ms
+ GET /login 200 in 20ms
+ ○ Compiling /payments ...
+ ✓ Compiled /payments in 1731ms (2185 modules)
+ GET /payments 200 in 1925ms
+ GET /login 200 in 23ms
+ GET /login 200 in 21ms
+ ✓ Compiled /maintenance in 361ms (2192 modules)
+ GET /maintenance 200 in 538ms
+ GET /login 200 in 29ms
+ GET /login 200 in 20ms
+ ✓ Compiled in 1380ms (998 modules)
+ ✓ Compiled in 163ms (998 modules)
+ ✓ Compiled in 156ms (998 modules)
+ ✓ Compiled in 139ms (998 modules)
+ ✓ Compiled / in 434ms (907 modules)
+ GET / 200 in 707ms
+ ✓ Compiled /welcome in 314ms (912 modules)
+ ✓ Compiled (917 modules)
+ GET /login 200 in 616ms
+ GET /welcome 200 in 539ms
+ GET /login 200 in 55ms
+ ✓ Compiled /properties in 132ms (922 modules)
+ GET /properties 200 in 448ms
+ GET /login 200 in 31ms
+ GET /login 200 in 24ms
+ ✓ Compiled /tenants in 136ms (929 modules)
+ GET /tenants 200 in 324ms
+ GET /login 200 in 24ms
+ GET /login 200 in 21ms
+ ✓ Compiled /payments in 271ms (1203 modules)
+ GET /payments 200 in 534ms
+ GET /login 200 in 34ms
+ GET /login 200 in 23ms
+ ✓ Compiled /maintenance in 219ms (1208 modules)
+ GET /maintenance 200 in 413ms
+ GET /login 200 in 29ms
+ GET /login 200 in 25ms
+ ✓ Compiled in 650ms (2206 modules)
