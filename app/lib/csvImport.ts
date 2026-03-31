@@ -126,6 +126,52 @@ export function mapPropertyRow(row: ParsedRow, landlordId: string): PropertyImpo
   };
 }
 
+// ── UNIT IMPORT ──
+
+export const UNIT_REQUIRED = ['code', 'property_name'] as const;
+export const UNIT_SAMPLE_HEADERS = 'property_name,code,description,bedrooms,default_rent_amount,status';
+export const UNIT_SAMPLE_ROWS = [
+  'Sunrise Apartments,A1,Master bedroom with ensuite bathroom,2,450000,Available',
+  'Sunrise Apartments,A2,Standard single room,1,250000,Available',
+  'Office Block Nakawa,B1,Open-plan office space,0,1200000,Available',
+];
+
+export interface UnitImportRow {
+  property_name: string;
+  code: string;
+  description: string;
+  bedrooms: string;
+  default_rent_amount: string;
+  status: string;
+  errors: string[];
+}
+
+export function validateUnitRow(row: ParsedRow): string[] {
+  const errors: string[] = [];
+  const code = row.code || row.unit_code || row.unit || '';
+  const property = row.property_name || row.property || row.building || '';
+  if (!code) errors.push('code is required');
+  if (!property) errors.push('property_name is required');
+  return errors;
+}
+
+export function mapUnitRow(row: ParsedRow): UnitImportRow {
+  const code = row.code || row.unit_code || row.unit || '';
+  const property_name = row.property_name || row.property || row.building || row.estate || '';
+  const validStatuses = ['Available', 'Occupied', 'Under_maintenance'];
+  const rawStatus = row.status || row.unit_status || '';
+  const status = validStatuses.includes(rawStatus) ? rawStatus : 'Available';
+  return {
+    property_name,
+    code,
+    description: row.description || row.desc || row.details || '',
+    bedrooms: row.bedrooms || row.beds || row.rooms || '',
+    default_rent_amount: row.default_rent_amount || row.rent_amount || row.rent || row.monthly_rent || '',
+    status,
+    errors: validateUnitRow(row),
+  };
+}
+
 /** Generate a downloadable CSV sample string. */
 export function buildSampleCSV(headers: string, rows: string[]): string {
   return [headers, ...rows].join('\n');

@@ -3,14 +3,15 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import {
-  parseCSV, mapTenantRow, mapPropertyRow,
-  TENANT_SAMPLE_HEADERS, TENANT_SAMPLE_ROWS,
+  parseCSV, mapUnitRow, mapPropertyRow,
+  UNIT_SAMPLE_HEADERS, UNIT_SAMPLE_ROWS,
   PROPERTY_SAMPLE_HEADERS, PROPERTY_SAMPLE_ROWS,
   buildSampleCSV, downloadSample,
   type ParsedRow,
 } from '../lib/csvImport';
+import type { UnitStatus } from '../types';
 
-type Tab = 'tenants' | 'properties';
+type Tab = 'units' | 'properties';
 type ImportMode = 'standard' | 'ai';
 
 interface ImportRow {
@@ -20,23 +21,23 @@ interface ImportRow {
 }
 
 const REQUIRED_FIELDS: Record<Tab, string[]> = {
-  tenants: ['full_name', 'phone', 'national_id'],
+  units: ['code', 'property_name'],
   properties: ['name', 'address', 'district'],
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  full_name: 'Full Name', phone: 'Phone', email: 'Email',
-  national_id: 'National ID (NIN)', address: 'Address', comm_preference: 'Comm. Preference',
-  name: 'Property Name', district: 'District', lc_area: 'LC Area',
-  property_type: 'Property Type', property_rates_ref: 'Rates Ref',
+  code: 'Unit Code', property_name: 'Property', description: 'Description',
+  bedrooms: 'Bedrooms', default_rent_amount: 'Monthly Rent (UGX)', status: 'Status',
+  name: 'Property Name', address: 'Address', district: 'District',
+  lc_area: 'LC Area', property_type: 'Property Type', property_rates_ref: 'Rates Ref',
 };
 
-const COMM_OPTIONS = ['WhatsApp', 'SMS', 'Email'];
+const UNIT_STATUSES: UnitStatus[] = ['Available', 'Occupied', 'Under_maintenance'];
 const PROPERTY_TYPES = ['Residential', 'Commercial', 'Mixed'];
 
 export default function ImportPage() {
-  const { landlord, addTenant, addProperty } = useApp();
-  const [activeTab, setActiveTab] = useState<Tab>('tenants');
+  const { landlord, properties, addUnit, addProperty } = useApp();
+  const [activeTab, setActiveTab] = useState<Tab>('units');
   const [mode, setMode] = useState<ImportMode>('standard');
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -45,13 +46,14 @@ export default function ImportPage() {
   const [aiParsingLabel, setAiParsingLabel] = useState('');
   const [aiError, setAiError] = useState('');
   const [importedCount, setImportedCount] = useState(0);
+  const [skippedCount, setSkippedCount] = useState(0);
   const [done, setDone] = useState(false);
   const [showCompletion, setShowCompletion] = useState(false);
   const [completionData, setCompletionData] = useState<Record<number, Record<string, string>>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const tabHeaders: Record<Tab, string[]> = {
-    tenants: ['full_name', 'phone', 'email', 'national_id', 'address', 'comm_preference'],
+    units: ['code', 'property_name', 'description', 'bedrooms', 'default_rent_amount', 'status'],
     properties: ['name', 'address', 'district', 'lc_area', 'property_type', 'property_rates_ref'],
   };
 
@@ -85,11 +87,7 @@ export default function ImportPage() {
             for (let i = 1; i <= pdf.numPages; i++) {
               const page = await pdf.getPage(i);
               const content = await page.getTextContent();
-              pages.push(
-                content.items
-                  .map(item => ('str' in item ? (item as { str: string }).str : ''))
-                  .join(' ')
-              );
+              pages.push(content.items.map(item => ('str' in item ? (item as { str: string }).str : '')).join(' '));
             }
             resolve(pages.join('\n'));
           } catch {
@@ -136,7 +134,6 @@ export default function ImportPage() {
 
   const applyRows = (mapped: ImportRow[]) => {
     setRows(mapped);
-    // Auto-select valid rows; error rows start unchecked
     setSelectedIndices(new Set(
       mapped.map((r, i) => r.errors.length === 0 ? i : -1).filter(i => i >= 0)
     ));
@@ -146,8 +143,8 @@ export default function ImportPage() {
     const parsed = parseCSV(text);
     if (parsed.length === 0) return;
     applyRows(parsed.map(row => {
-      if (activeTab === 'tenants') {
-        const m = mapTenantRow(row, landlord.id);
+      if (activeTab === 'units') {
+        const m = mapUnitRow(row);
         const { errors, ...rest } = m;
         return { row, errors, mapped: rest as unknown as Record<string, string> };
       } else {
@@ -176,7 +173,7 @@ export default function ImportPage() {
       applyRows((data.rows as Record<string, string>[]).map(aiRow => {
         const { errors: rawErrors, ...fields } = aiRow;
         const errors: string[] = Array.isArray(rawErrors) ? rawErrors : [];
-        return { row: fields as ParsedRow, errors, mapped: { ...fields, landlord_id: landlord.id } };
+        return { row: fields as ParsedRow, errors, mapped: { ...fields } };
       }));
     } catch {
       setAiError('Network error. Please try again.');
@@ -191,6 +188,7 @@ export default function ImportPage() {
     setSelectedIndices(new Set());
     setDone(false);
     setImportedCount(0);
+    setSkippedCount(0);
     setAiError('');
     setShowCompletion(false);
 
@@ -198,16 +196,10 @@ export default function ImportPage() {
       setAiParsing(true);
       extractText(file)
         .then(text => {
-          if (!text?.trim()) {
-            setAiParsing(false);
-            return;
-          }
+          if (!text?.trim()) { setAiParsing(false); return; }
           return parseWithAI(text);
         })
-        .catch(err => {
-          setAiParsing(false);
-          setAiError(err.message);
-        });
+        .catch(err => { setAiParsing(false); setAiError(err.message); });
     } else {
       extractText(file)
         .then(text => { if (text?.trim()) parseStandard(text); })
@@ -261,22 +253,54 @@ export default function ImportPage() {
     }
   };
 
+  const resolvePropertyId = (propertyName: string): string | null => {
+    const name = propertyName.trim().toLowerCase();
+    const match = properties.find(p =>
+      p.name.toLowerCase() === name ||
+      p.name.toLowerCase().includes(name) ||
+      name.includes(p.name.toLowerCase())
+    );
+    return match?.id ?? null;
+  };
+
   const doImport = async (overrides: Record<number, Record<string, string>>) => {
     setImporting(true);
     let count = 0;
+    let skipped = 0;
+
     for (const idx of Array.from(selectedIndices)) {
       const base = rows[idx].mapped;
       const finalData = overrides[idx] ? { ...base, ...overrides[idx] } : base;
+
       try {
-        if (activeTab === 'tenants') {
-          await addTenant(finalData as Parameters<typeof addTenant>[0]);
+        if (activeTab === 'units') {
+          const propertyId = resolvePropertyId(finalData.property_name ?? '');
+          if (!propertyId) {
+            skipped++;
+            continue;
+          }
+          const validStatuses: UnitStatus[] = ['Available', 'Occupied', 'Under_maintenance'];
+          const rawStatus = finalData.status ?? '';
+          await addUnit({
+            property_id: propertyId,
+            code: finalData.code ?? '',
+            description: finalData.description ?? '',
+            bedrooms: parseInt(finalData.bedrooms ?? '1', 10) || 1,
+            default_rent_amount: parseInt((finalData.default_rent_amount ?? '0').replace(/[^0-9]/g, ''), 10) || 0,
+            status: validStatuses.includes(rawStatus as UnitStatus) ? (rawStatus as UnitStatus) : 'Available',
+          });
+          count++;
         } else {
           await addProperty(finalData as Parameters<typeof addProperty>[0]);
+          count++;
         }
-        count++;
-      } catch { /* skip individual failures */ }
+      } catch {
+        skipped++;
+      }
     }
+
     setImportedCount(count);
+    setSkippedCount(skipped);
     setImporting(false);
     setShowCompletion(false);
     setDone(true);
@@ -292,6 +316,7 @@ export default function ImportPage() {
     setSelectedIndices(new Set());
     setDone(false);
     setImportedCount(0);
+    setSkippedCount(0);
     setAiError('');
     setShowCompletion(false);
     if (fileRef.current) fileRef.current.value = '';
@@ -308,12 +333,12 @@ export default function ImportPage() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Import Data</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Bulk import tenants or properties from any file</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Bulk import units or properties from any file</p>
       </div>
 
       {/* Tab selector */}
       <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
-        {(['tenants', 'properties'] as Tab[]).map(tab => (
+        {(['units', 'properties'] as Tab[]).map(tab => (
           <button
             key={tab}
             onClick={() => { setActiveTab(tab); reset(); }}
@@ -355,7 +380,7 @@ export default function ImportPage() {
             <div>
               <p className="text-sm font-semibold text-violet-800 dark:text-violet-200">AI Smart Import — powered by Claude</p>
               <p className="text-xs text-violet-600 dark:text-violet-300 mt-1">
-                Upload any file format. Claude maps your columns automatically, handles any naming convention, and flags missing data. You can select rows with errors and fill in the gaps before importing.
+                Upload any file format. Claude maps your columns automatically, handles any naming convention, and flags missing data. Select rows with errors and fill in the gaps before importing.
               </p>
               <div className="flex flex-wrap gap-2 mt-2">
                 {['CSV', 'Excel (.xlsx)', 'PDF', 'Word (.docx)', 'TSV'].map(fmt => (
@@ -364,6 +389,14 @@ export default function ImportPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Unit import hint (standard mode) */}
+      {mode === 'standard' && activeTab === 'units' && properties.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-3 mb-4 text-xs text-amber-800 dark:text-amber-300">
+          <strong>property_name</strong> must match an existing property exactly.
+          Your properties: {properties.map(p => `"${p.name}"`).join(', ')}
         </div>
       )}
 
@@ -376,8 +409,8 @@ export default function ImportPage() {
           </div>
           <button
             onClick={() => {
-              const content = activeTab === 'tenants'
-                ? buildSampleCSV(TENANT_SAMPLE_HEADERS, TENANT_SAMPLE_ROWS)
+              const content = activeTab === 'units'
+                ? buildSampleCSV(UNIT_SAMPLE_HEADERS, UNIT_SAMPLE_ROWS)
                 : buildSampleCSV(PROPERTY_SAMPLE_HEADERS, PROPERTY_SAMPLE_ROWS);
               downloadSample(`${activeTab}-import-sample.csv`, content);
             }}
@@ -392,16 +425,30 @@ export default function ImportPage() {
 
       {done ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
-          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${importedCount > 0 ? 'bg-green-100 dark:bg-green-900/30' : 'bg-orange-100 dark:bg-orange-900/30'}`}>
+            {importedCount > 0
+              ? <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              : <svg className="w-8 h-8 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            }
           </div>
-          <p className="text-xl font-bold text-gray-800 dark:text-white mb-2">Import Complete</p>
-          <p className="text-gray-500 dark:text-gray-400 mb-6">{importedCount} {activeTab} imported successfully.</p>
-          <button onClick={reset} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Import More</button>
+          <p className="text-xl font-bold text-gray-800 dark:text-white mb-2">
+            {importedCount > 0 ? 'Import Complete' : 'Import Finished'}
+          </p>
+          <p className="text-gray-500 dark:text-gray-400 mb-1">
+            {importedCount} {activeTab} imported successfully.
+          </p>
+          {skippedCount > 0 && (
+            <p className="text-sm text-orange-600 dark:text-orange-400 mb-1">
+              {skippedCount} skipped — {activeTab === 'units' ? 'property name not found or already exists' : 'already exists or validation error'}.
+            </p>
+          )}
+          {importedCount > 0 && activeTab === 'units' && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-5">Units are now visible on the Dashboard and Analytics pages.</p>
+          )}
+          <button onClick={reset} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 mt-4">Import More</button>
         </div>
 
       ) : aiParsing ? (
-        /* AI parsing loader */
         <div className="border-2 border-dashed border-violet-300 dark:border-violet-600 rounded-xl p-12 text-center bg-violet-50/50 dark:bg-violet-900/10">
           <div className="w-14 h-14 mx-auto mb-4 relative">
             <div className="absolute inset-0 rounded-full border-4 border-violet-200 dark:border-violet-700" />
@@ -417,7 +464,6 @@ export default function ImportPage() {
         </div>
 
       ) : rows.length === 0 ? (
-        /* Drop zone */
         <div>
           {aiError && (
             <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-4 flex items-start gap-3">
@@ -428,27 +474,16 @@ export default function ImportPage() {
           <div
             onDrop={handleDrop}
             onDragOver={e => e.preventDefault()}
-            className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer ${mode === 'ai' ? 'border-violet-300 dark:border-violet-600 hover:border-violet-500 dark:hover:border-violet-400 bg-violet-50/30 dark:bg-violet-900/5' : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'}`}
+            className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer ${mode === 'ai' ? 'border-violet-300 dark:border-violet-600 hover:border-violet-500 bg-violet-50/30 dark:bg-violet-900/5' : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'}`}
             onClick={() => fileRef.current?.click()}
           >
             {mode === 'ai' ? (
               <div className="flex justify-center gap-3 mb-4">
-                {/* PDF */}
-                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
-                  <span className="text-xs font-bold text-red-600">PDF</span>
-                </div>
-                {/* DOCX */}
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-                  <span className="text-xs font-bold text-blue-600">DOC</span>
-                </div>
-                {/* XLSX */}
-                <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                  <span className="text-xs font-bold text-green-600">XLS</span>
-                </div>
-                {/* CSV */}
-                <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center">
-                  <span className="text-xs font-bold text-gray-600 dark:text-gray-300">CSV</span>
-                </div>
+                {[['PDF', 'bg-red-100 dark:bg-red-900/30 text-red-600'], ['DOC', 'bg-blue-100 dark:bg-blue-900/30 text-blue-600'], ['XLS', 'bg-green-100 dark:bg-green-900/30 text-green-600'], ['CSV', 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300']].map(([label, cls]) => (
+                  <div key={label} className={`w-10 h-10 ${cls} rounded-lg flex items-center justify-center`}>
+                    <span className="text-xs font-bold">{label}</span>
+                  </div>
+                ))}
               </div>
             ) : (
               <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
@@ -459,23 +494,14 @@ export default function ImportPage() {
             <p className="text-sm text-gray-400 dark:text-gray-500">
               {mode === 'ai' ? 'PDF, Word (.docx), Excel (.xlsx), CSV, TSV' : 'or click to browse'}
             </p>
-            {mode === 'ai' && (
-              <p className="text-xs text-violet-400 dark:text-violet-500 mt-2">Any column names — Claude maps them automatically</p>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept={acceptTypes}
-              className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-            />
+            {mode === 'ai' && <p className="text-xs text-violet-400 mt-2">Any column names — Claude maps them automatically</p>}
+            <input ref={fileRef} type="file" accept={acceptTypes} className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           </div>
         </div>
 
       ) : (
-        /* Preview table with selection */
+        /* Preview table */
         <div className="space-y-4">
-          {/* Toolbar */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3 text-sm flex-wrap">
               {mode === 'ai' && (
@@ -484,27 +510,28 @@ export default function ImportPage() {
                   Parsed by Claude
                 </span>
               )}
-              <span className="text-green-700 dark:text-green-400 font-medium">
-                {rows.filter(r => r.errors.length === 0).length} valid
-              </span>
+              <span className="text-green-700 dark:text-green-400 font-medium">{rows.filter(r => r.errors.length === 0).length} valid</span>
               {rows.filter(r => r.errors.length > 0).length > 0 && (
-                <span className="text-orange-600 dark:text-orange-400 font-medium">
-                  {rows.filter(r => r.errors.length > 0).length} with errors
-                </span>
+                <span className="text-orange-600 dark:text-orange-400 font-medium">{rows.filter(r => r.errors.length > 0).length} with errors</span>
               )}
               <span className="text-gray-400">·</span>
               <span className="text-blue-600 dark:text-blue-400 font-medium">{selectedIndices.size} selected</span>
-              <button
-                onClick={selectValid}
-                className="text-xs text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 underline underline-offset-2"
-              >
-                Select valid only
-              </button>
+              <button onClick={selectValid} className="text-xs text-gray-500 hover:text-blue-600 underline underline-offset-2">Select valid only</button>
             </div>
-            <button onClick={reset} className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-              Upload different file
-            </button>
+            <button onClick={reset} className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Upload different file</button>
           </div>
+
+          {/* Property lookup warning for units */}
+          {activeTab === 'units' && properties.length === 0 && (
+            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-700 rounded-lg p-3 text-xs text-orange-700 dark:text-orange-300">
+              No properties found. Units must be linked to an existing property. Please add properties first, then import units.
+            </div>
+          )}
+          {activeTab === 'units' && properties.length > 0 && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
+              Available properties: {properties.map(p => <span key={p.id} className="font-medium text-gray-700 dark:text-gray-300 mr-2">"{p.name}"</span>)}
+            </div>
+          )}
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
@@ -527,45 +554,37 @@ export default function ImportPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {rows.map((r, i) => (
-                    <tr
-                      key={i}
-                      onClick={() => toggleSelect(i)}
-                      className={`cursor-pointer transition-colors ${
-                        selectedIndices.has(i)
-                          ? r.errors.length > 0
-                            ? 'bg-orange-50 dark:bg-orange-900/10'
-                            : 'bg-blue-50 dark:bg-blue-900/10'
-                          : r.errors.length > 0
-                            ? 'bg-red-50/40 dark:bg-red-900/5 opacity-60'
-                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                      }`}
-                    >
-                      <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIndices.has(i)}
-                          onChange={() => toggleSelect(i)}
-                          className="rounded"
-                        />
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {r.errors.length === 0
-                          ? <span className="text-green-600 text-xs font-medium">✓ OK</span>
-                          : (
-                            <span className="text-orange-600 text-xs font-medium" title={r.errors.join(', ')}>
-                              ⚠ {r.errors[0]}
-                            </span>
-                          )
-                        }
-                      </td>
-                      {tabHeaders[activeTab].map(h => (
-                        <td key={h} className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-xs truncate">
-                          {r.row[h] ?? ''}
+                  {rows.map((r, i) => {
+                    const propMissing = activeTab === 'units' &&
+                      r.errors.length === 0 &&
+                      !resolvePropertyId(r.mapped.property_name ?? '');
+                    return (
+                      <tr
+                        key={i}
+                        onClick={() => toggleSelect(i)}
+                        className={`cursor-pointer transition-colors ${
+                          selectedIndices.has(i)
+                            ? (r.errors.length > 0 || propMissing) ? 'bg-orange-50 dark:bg-orange-900/10' : 'bg-blue-50 dark:bg-blue-900/10'
+                            : (r.errors.length > 0 || propMissing) ? 'bg-red-50/40 dark:bg-red-900/5 opacity-60' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedIndices.has(i)} onChange={() => toggleSelect(i)} className="rounded" />
                         </td>
-                      ))}
-                    </tr>
-                  ))}
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {propMissing
+                            ? <span className="text-orange-600 text-xs font-medium">⚠ property not found</span>
+                            : r.errors.length === 0
+                              ? <span className="text-green-600 text-xs font-medium">✓ OK</span>
+                              : <span className="text-orange-600 text-xs font-medium" title={r.errors.join(', ')}>⚠ {r.errors[0]}</span>
+                          }
+                        </td>
+                        {tabHeaders[activeTab].map(h => (
+                          <td key={h} className="px-3 py-2 text-gray-700 dark:text-gray-300 max-w-xs truncate">{r.row[h] ?? ''}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -581,8 +600,7 @@ export default function ImportPage() {
                 ? 'Importing…'
                 : selectedErrorRows.length > 0
                   ? `Import ${selectedIndices.size} ${activeTab} — complete ${selectedErrorRows.length} with missing fields →`
-                  : `Import ${selectedIndices.size} ${activeTab}`
-              }
+                  : `Import ${selectedIndices.size} ${activeTab}`}
             </button>
           ) : (
             <p className="text-center text-gray-400 dark:text-gray-500 text-sm">Select rows above to import</p>
@@ -601,19 +619,13 @@ export default function ImportPage() {
                   {selectedErrorRows.length} record{selectedErrorRows.length !== 1 ? 's' : ''} need required fields filled in
                 </p>
               </div>
-              <button
-                onClick={() => setShowCompletion(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none"
-              >
-                &times;
-              </button>
+              <button onClick={() => setShowCompletion(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none">&times;</button>
             </div>
 
             <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
               {selectedErrorRows.map(({ index, errors }) => {
                 const cd = completionData[index] ?? {};
-                const identifier = cd.full_name || cd.name || rows[index].row.full_name || rows[index].row.name || `Row ${index + 1}`;
-                const missingRequired = REQUIRED_FIELDS[activeTab].filter(f => !cd[f]?.trim());
+                const identifier = cd.code || cd.name || rows[index].row.code || rows[index].row.name || `Row ${index + 1}`;
 
                 return (
                   <div key={index} className="border border-orange-200 dark:border-orange-700 rounded-xl p-5 bg-orange-50/50 dark:bg-orange-900/10">
@@ -629,21 +641,36 @@ export default function ImportPage() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {REQUIRED_FIELDS[activeTab].map(field => {
-                        const isMissing = missingRequired.includes(field);
-                        if (field === 'comm_preference') {
+                        const isMissing = !cd[field]?.trim();
+                        if (field === 'property_name') {
                           return (
                             <div key={field}>
                               <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
                                 {FIELD_LABELS[field]} <span className="text-red-500">*</span>
                               </label>
                               <select
-                                value={cd[field] ?? 'WhatsApp'}
-                                onChange={e => setCompletionData(prev => ({
-                                  ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value },
-                                }))}
-                                className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 dark:border-orange-500' : 'border-gray-300 dark:border-gray-600'}`}
+                                value={cd[field] ?? ''}
+                                onChange={e => setCompletionData(prev => ({ ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value } }))}
+                                className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 ring-1 ring-orange-300' : 'border-gray-300 dark:border-gray-600'}`}
                               >
-                                {COMM_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                <option value="">— Select property —</option>
+                                {properties.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+                        if (field === 'status') {
+                          return (
+                            <div key={field}>
+                              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                {FIELD_LABELS[field]} <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={cd[field] ?? 'Available'}
+                                onChange={e => setCompletionData(prev => ({ ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value } }))}
+                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white"
+                              >
+                                {UNIT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                             </div>
                           );
@@ -656,10 +683,8 @@ export default function ImportPage() {
                               </label>
                               <select
                                 value={cd[field] ?? 'Residential'}
-                                onChange={e => setCompletionData(prev => ({
-                                  ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value },
-                                }))}
-                                className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 dark:border-orange-500' : 'border-gray-300 dark:border-gray-600'}`}
+                                onChange={e => setCompletionData(prev => ({ ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value } }))}
+                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white"
                               >
                                 {PROPERTY_TYPES.map(o => <option key={o} value={o}>{o}</option>)}
                               </select>
@@ -673,11 +698,9 @@ export default function ImportPage() {
                             </label>
                             <input
                               value={cd[field] ?? ''}
-                              onChange={e => setCompletionData(prev => ({
-                                ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value },
-                              }))}
+                              onChange={e => setCompletionData(prev => ({ ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value } }))}
                               placeholder={`Enter ${FIELD_LABELS[field] ?? field}`}
-                              className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 dark:border-orange-500 ring-1 ring-orange-300' : 'border-gray-300 dark:border-gray-600'}`}
+                              className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 ring-1 ring-orange-300' : 'border-gray-300 dark:border-gray-600'}`}
                             />
                           </div>
                         );
@@ -693,17 +716,10 @@ export default function ImportPage() {
                 {selectedIndices.size - selectedErrorRows.length} valid row{selectedIndices.size - selectedErrorRows.length !== 1 ? 's' : ''} will also be imported
               </p>
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowCompletion(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                >
+                <button onClick={() => setShowCompletion(false)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                   Back
                 </button>
-                <button
-                  onClick={handleCompletionSubmit}
-                  disabled={importing}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
-                >
+                <button onClick={handleCompletionSubmit} disabled={importing} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50">
                   {importing ? 'Importing…' : `Import ${selectedIndices.size} ${activeTab}`}
                 </button>
               </div>

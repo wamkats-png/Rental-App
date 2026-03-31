@@ -3,13 +3,13 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const TENANT_SCHEMA = `{
-  full_name: string (required — tenant's full name),
-  phone: string (required — Uganda phone, e.g. +256700000001 or 0700000001),
-  email: string (optional),
-  national_id: string (required — Uganda NIN, e.g. CM900000001001 or CF900000002002),
-  address: string (optional — physical address),
-  comm_preference: "WhatsApp" | "Email" | "SMS" (optional, default "WhatsApp")
+const UNIT_SCHEMA = `{
+  property_name: string (required — name of the property/building this unit belongs to),
+  code: string (required — unit identifier, e.g. "A1", "Room 3", "Unit 101", "Flat 2B"),
+  description: string (optional — unit description, e.g. "2-bedroom with ensuite"),
+  bedrooms: number (optional — number of bedrooms as integer, default 1; use 0 for non-residential),
+  default_rent_amount: number (optional — monthly rent in UGX as integer, e.g. 450000),
+  status: "Available" | "Occupied" | "Under_maintenance" (optional, default "Available")
 }`;
 
 const PROPERTY_SCHEMA = `{
@@ -34,12 +34,12 @@ export async function POST(req: NextRequest) {
     if (!text || !type) {
       return NextResponse.json({ error: 'text and type are required.' }, { status: 400 });
     }
-    if (type !== 'tenants' && type !== 'properties') {
-      return NextResponse.json({ error: 'type must be "tenants" or "properties".' }, { status: 400 });
+    if (type !== 'units' && type !== 'properties') {
+      return NextResponse.json({ error: 'type must be "units" or "properties".' }, { status: 400 });
     }
 
-    const schema = type === 'tenants' ? TENANT_SCHEMA : PROPERTY_SCHEMA;
-    const entityName = type === 'tenants' ? 'tenant' : 'property';
+    const schema = type === 'units' ? UNIT_SCHEMA : PROPERTY_SCHEMA;
+    const entityName = type === 'units' ? 'unit' : 'property';
 
     // Cap input to stay well within token limits
     const truncatedText = text.slice(0, 12000);
@@ -68,8 +68,8 @@ ${schema}
 Output format (JSON array, one object per row):
 [
   {
-    ${type === 'tenants'
-      ? '"full_name": "...", "phone": "...", "email": "...", "national_id": "...", "address": "...", "comm_preference": "WhatsApp"'
+    ${type === 'units'
+      ? '"property_name": "...", "code": "...", "description": "...", "bedrooms": 1, "default_rent_amount": 0, "status": "Available"'
       : '"name": "...", "address": "...", "district": "...", "lc_area": "...", "property_type": "Residential", "property_rates_ref": ""'
     },
     "errors": []
