@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate": "node scripts/migrate.mjs",
+    "migrate:status": "node scripts/migrate.mjs --status",
+    "migrate:dry-run": "node scripts/migrate.mjs --dry-run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
