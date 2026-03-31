@@ -14,27 +14,27 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@hookform/resolvers": "^5.2.2",
-    "@supabase/ssr": "^0.8.0",
+    "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.97.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
-    "next": "^14.1.0",
+    "next": "^15.5.14",
     "openai": "^6.25.0",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "react-hook-form": "^7.72.0",
     "recharts": "^3.8.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "20.6.2",
-    "@types/react": "18.2.22",
-    "@types/react-dom": "18.2.7",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "autoprefixer": "10.4.15",
     "eslint": "8.49.0",
-    "eslint-config-next": "13.5.1",
+    "eslint-config-next": "^15.5.14",
     "postcss": "8.4.30",
     "tailwindcss": "3.3.3",
-    "typescript": "5.2.2"
+    "typescript": "^5.9.3"
   }
 }
