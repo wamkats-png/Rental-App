@@ -20,27 +20,27 @@ When given a description or image of a contract, extract or generate the followi
 - notice_period_days: Notice period in days (default 30)
 - contract_type: "Residential", "Commercial", or "Other"
 - special_terms: Any special conditions or clauses (string)
-- contract_html: A full professional HTML contract document formatted for Uganda, including all terms
+- contract_html: A compact HTML tenancy agreement (NO inline styles, NO style tags, plain semantic HTML only)
 
-For the contract_html, generate a complete, professional tenancy agreement that includes:
-1. Title: "TENANCY AGREEMENT"
-2. Date and parties (Landlord and Tenant with full names)
-3. Property description and address
-4. Term of tenancy (start and end dates)
-5. Rent amount, payment frequency, due date, and accepted payment methods (Cash, Mobile Money, Bank Transfer)
-6. Security deposit terms
+For contract_html, generate a concise but complete tenancy agreement using ONLY these tags: <h1>, <h2>, <p>, <ol>, <li>, <strong>, <br>. No CSS, no style attributes, no class attributes.
+
+Include these sections (keep each section brief — 2-5 sentences or bullet points):
+1. Title "TENANCY AGREEMENT" and date
+2. Parties: Landlord and Tenant names
+3. Property address and unit
+4. Lease term (start/end dates)
+5. Rent: amount, frequency, due date, payment methods (Cash, Mobile Money, Bank Transfer)
+6. Security deposit amount and return conditions
 7. Utilities responsibility
-8. Tenant obligations (maintain property, no subletting without consent, etc.)
-9. Landlord obligations (structural repairs, quiet enjoyment, etc.)
+8. Tenant obligations (4-5 key points as a list)
+9. Landlord obligations (3-4 key points as a list)
 10. Termination and notice period
-11. Governing law: "Laws of the Republic of Uganda"
-12. Signature blocks for both parties with date fields and witness lines
+11. Governing law: Laws of the Republic of Uganda
+12. Signature blocks with date lines for both parties and a witness
 
-Use proper HTML formatting with <h1>, <h2>, <p>, <ol>, <li> tags. Style it professionally.
+If information is missing, use reasonable Uganda defaults (30-day notice, tenant pays utilities) and note assumptions in special_terms.
 
-If information is missing from the user's input, use reasonable defaults for Uganda (e.g., standard 30-day notice, tenant pays utilities, etc.) but note what was assumed.
-
-IMPORTANT: Always respond with valid JSON only. No markdown, no extra text, no code fences.`;
+IMPORTANT: Always respond with valid JSON only. No markdown, no extra text, no code fences. Keep contract_html under 2000 words.`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -116,12 +116,20 @@ export async function POST(req: NextRequest) {
     // Strip any accidental markdown code fences before parsing
     let cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-    // If response was truncated (hit token limit), close the JSON so it parses
+    // If response was truncated (hit token limit), rescue the JSON
     if (response.stop_reason === 'max_tokens') {
-      // Find the last complete field and close the object
-      const lastComma = cleaned.lastIndexOf(',"');
-      if (lastComma !== -1) cleaned = cleaned.slice(0, lastComma);
-      cleaned = cleaned + '"}';
+      const htmlFieldIdx = cleaned.indexOf('"contract_html"');
+      if (htmlFieldIdx !== -1) {
+        // Truncated inside contract_html — strip the incomplete value and use a placeholder
+        let base = cleaned.slice(0, htmlFieldIdx).trimEnd();
+        if (base.endsWith(',')) base = base.slice(0, -1);
+        cleaned = base + ',"contract_html":"<p><em>Contract preview was truncated. Please try again.</em></p>"}';
+      } else {
+        // Truncated before contract_html — close the JSON object cleanly
+        cleaned = cleaned.trimEnd();
+        if (cleaned.endsWith(',')) cleaned = cleaned.slice(0, -1);
+        cleaned += ',"contract_html":"<p><em>Contract preview unavailable. Please try again.</em></p>"}';
+      }
     }
     const parsed = JSON.parse(cleaned);
 
