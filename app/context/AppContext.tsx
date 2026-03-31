@@ -206,7 +206,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'property', entity_id: newProp.id, summary: `Added property: ${p.name}` });
         showToast('Property added');
       }
-    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    } catch (err: any) { console.error('[RentFlow] addProperty:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [user, properties, showToast]);
 
   const updateProperty = useCallback(async (id: string, p: Partial<Property>) => {
@@ -236,7 +236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setUnits(prev => [newUnit, ...prev]);
         showToast('Unit added');
       }
-    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    } catch (err: any) { console.error('[RentFlow] addUnit:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [showToast]);
 
   const updateUnit = useCallback(async (id: string, u: Partial<Unit>) => {
@@ -277,7 +277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'tenant', entity_id: newTenant.id, summary: `Added tenant: ${t.full_name}` });
         showToast('Tenant added');
       }
-    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    } catch (err: any) { console.error('[RentFlow] addTenant:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [user, tenants, showToast]);
 
   const updateTenant = useCallback(async (id: string, t: Partial<Tenant>) => {
@@ -307,7 +307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         insertAuditLog({ landlord_id: user.id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'lease', entity_id: newLease.id, summary: `Created lease — UGX ${l.rent_amount.toLocaleString()}/mo` });
         showToast('Lease created');
       }
-    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    } catch (err: any) { console.error('[RentFlow] addLease:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [user, showToast]);
 
   const updateLease = useCallback(async (id: string, l: Partial<Lease>) => {
@@ -337,7 +337,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (user) insertAuditLog({ landlord_id: p.landlord_id, user_id: user.id, user_email: user.email ?? '', action: 'create', entity_type: 'payment', entity_id: newPayment.id, summary: `Payment recorded — UGX ${p.amount.toLocaleString()} (${p.receipt_number})` });
         showToast('Payment recorded');
       }
-    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    } catch (err: any) { console.error('[RentFlow] addPayment:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [user, showToast]);
 
   const deletePayment = useCallback(async (id: string) => {
@@ -357,7 +357,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMaintenance(prev => [newRecord, ...prev]);
         showToast('Maintenance request added');
       }
-    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+    } catch (err: any) { console.error('[RentFlow] addMaintenance:', err); setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [showToast]);
 
   const updateMaintenance = useCallback(async (id: string, m: Partial<MaintenanceRecord>) => {
