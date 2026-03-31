@@ -10,7 +10,7 @@ function friendlyError(err: any): string {
   if (msg.includes('permission') || msg.includes('policy')) return 'You do not have permission to do that.';
   return 'Something went wrong. Please try again.';
 }
-import { Property, Unit, Tenant, Lease, Payment, MaintenanceRecord, Landlord, Contract, Application, CommunicationLog, Expense, CommTemplate } from '../types';
+import { Property, Unit, Tenant, Lease, Payment, MaintenanceRecord, Landlord, Contract, Application, CommunicationLog, Expense, CommTemplate, Vendor } from '../types';
 import { useAuth } from '../components/AuthProvider';
 import { supabase } from '../lib/supabase';
 import {
@@ -22,7 +22,8 @@ import {
   fetchPayments, insertPayment, deletePaymentDB,
   fetchMaintenance, insertMaintenance, updateMaintenanceDB, deleteMaintenanceDB,
   fetchContracts,
-  fetchApplications, insertApplication, updateApplicationDB,
+  fetchApplications, insertApplication, updateApplicationDB, deleteApplicationDB,
+  fetchVendors, insertVendor, updateVendorDB, deleteVendorDB,
   fetchCommLogs, insertCommLog,
   fetchExpenses, insertExpense, updateExpenseDB, deleteExpenseDB,
   fetchCommTemplates, insertCommTemplate, updateCommTemplateDB, deleteCommTemplateDB,
@@ -39,6 +40,7 @@ interface AppContextType {
   maintenance: MaintenanceRecord[];
   contracts: Contract[];
   applications: Application[];
+  vendors: Vendor[];
   communicationLogs: CommunicationLog[];
   expenses: Expense[];
   commTemplates: CommTemplate[];
@@ -66,6 +68,10 @@ interface AppContextType {
   deleteMaintenance: (id: string) => void;
   addApplication: (a: Omit<Application, 'id' | 'landlord_id' | 'created_at'>) => void;
   updateApplication: (id: string, a: Partial<Application>) => void;
+  deleteApplication: (id: string) => void;
+  addVendor: (v: Omit<Vendor, 'id' | 'landlord_id' | 'created_at'>) => void;
+  updateVendor: (id: string, v: Partial<Vendor>) => void;
+  deleteVendor: (id: string) => void;
   addCommunicationLog: (c: Omit<CommunicationLog, 'id' | 'landlord_id' | 'created_at'>) => void;
   addExpense: (e: Omit<Expense, 'id' | 'created_at'>) => void;
   updateExpense: (id: string, e: Partial<Expense>) => void;
@@ -106,6 +112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationLog[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [commTemplates, setCommTemplates] = useState<CommTemplate[]>([]);
@@ -143,7 +150,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const propertyIds = props.map(p => p.id);
 
-        const [unitData, tenantData, leaseData, paymentData, maintData, contractData, appData, commData, expenseData, templateData] =
+        const [unitData, tenantData, leaseData, paymentData, maintData, contractData, appData, vendorData, commData, expenseData, templateData] =
           await Promise.all([
             fetchUnits(propertyIds),
             fetchTenants(user.id),
@@ -152,6 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             fetchMaintenance(user.id),
             fetchContracts(user.id),
             fetchApplications(user.id),
+            fetchVendors(user.id),
             fetchCommLogs(user.id),
             fetchExpenses(user.id),
             fetchCommTemplates(user.id),
@@ -164,6 +172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMaintenance(maintData);
         setContracts(contractData);
         setApplications(appData);
+        setVendors(vendorData);
         setCommunicationLogs(commData);
         setExpenses(expenseData);
         setCommTemplates(templateData);
@@ -398,6 +407,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
   }, [showToast]);
 
+  const deleteApplication = useCallback(async (id: string) => {
+    try {
+      setError(null);
+      if (supabase) await deleteApplicationDB(id);
+      setApplications(prev => prev.filter(x => x.id !== id));
+      showToast('Application deleted');
+    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+  }, [showToast]);
+
+  const addVendor = useCallback(async (v: Omit<Vendor, 'id' | 'landlord_id' | 'created_at'>) => {
+    try {
+      setError(null);
+      if (supabase && user) {
+        const newVendor = await insertVendor({ ...v, landlord_id: user.id });
+        setVendors(prev => [...prev, newVendor].sort((a, b) => a.name.localeCompare(b.name)));
+        showToast('Vendor added');
+      }
+    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+  }, [user, showToast]);
+
+  const updateVendor = useCallback(async (id: string, v: Partial<Vendor>) => {
+    try {
+      setError(null);
+      if (supabase) await updateVendorDB(id, v);
+      setVendors(prev => prev.map(x => x.id === id ? { ...x, ...v } : x));
+      showToast('Vendor updated');
+    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+  }, [showToast]);
+
+  const deleteVendor = useCallback(async (id: string) => {
+    try {
+      setError(null);
+      if (supabase) await deleteVendorDB(id);
+      setVendors(prev => prev.filter(x => x.id !== id));
+      showToast('Vendor removed');
+    } catch (err: any) { setError(friendlyError(err)); showToast(friendlyError(err), 'error'); }
+  }, [showToast]);
+
   const addCommunicationLog = useCallback(async (c: Omit<CommunicationLog, 'id' | 'landlord_id' | 'created_at'>) => {
     try {
       setError(null);
@@ -468,14 +515,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [showToast]);
 
   const value: AppContextType = {
-    landlord, properties, units, tenants, leases, payments, maintenance, contracts, applications, communicationLogs,
+    landlord, properties, units, tenants, leases, payments, maintenance, contracts, applications, vendors, communicationLogs,
     expenses, commTemplates,
     loading, error, toast, dismissToast,
     updateLandlord, addProperty, updateProperty, deleteProperty,
     addUnit, updateUnit, deleteUnit, addTenant, updateTenant, deleteTenant,
     addLease, updateLease, deleteLease, addPayment, deletePayment,
     addMaintenance, updateMaintenance, deleteMaintenance,
-    addApplication, updateApplication, addCommunicationLog,
+    addApplication, updateApplication, deleteApplication,
+    addVendor, updateVendor, deleteVendor,
+    addCommunicationLog,
     addExpense, updateExpense, deleteExpense,
     addCommTemplate, updateCommTemplate, deleteCommTemplate,
   };

@@ -40,7 +40,7 @@ const defaultForm = {
 };
 
 export default function MaintenancePage() {
-  const { properties, units, maintenance, loading, landlord, addMaintenance, updateMaintenance, deleteMaintenance } = useApp();
+  const { properties, units, maintenance, vendors, loading, landlord, addMaintenance, updateMaintenance, deleteMaintenance } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
@@ -337,7 +337,14 @@ export default function MaintenancePage() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
-                  <input type="text" name="vendor" value={form.vendor} onChange={handleChange} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Vendor name" />
+                  {vendors.length > 0 ? (
+                    <select name="vendor" value={form.vendor} onChange={handleChange} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                      <option value="">Not assigned</option>
+                      {vendors.map(v => <option key={v.id} value={v.name}>{v.name} ({v.category})</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" name="vendor" value={form.vendor} onChange={handleChange} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Vendor name (add vendors in Vendors page)" />
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cost (UGX)</label>

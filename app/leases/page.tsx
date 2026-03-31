@@ -51,6 +51,7 @@ export default function LeasesPage() {
   const { properties, units, tenants, leases, loading, addLease, updateLease, deleteLease, updateUnit } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [renewingFromId, setRenewingFromId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [filterStatus, setFilterStatus] = useState<LeaseStatus | 'All'>('All');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -79,6 +80,39 @@ export default function LeasesPage() {
     setShowModal(true);
     setToast('Lease duplicated — update dates before saving');
   };
+  const handleRenew = (l: typeof leases[0]) => {
+    // Compute new start = day after old end_date, new end = +1 year from new start
+    const oldEnd = new Date(l.end_date);
+    const newStart = new Date(oldEnd);
+    newStart.setDate(newStart.getDate() + 1);
+    const newEnd = new Date(newStart);
+    newEnd.setFullYear(newEnd.getFullYear() + 1);
+    const newStartStr = newStart.toISOString().split('T')[0];
+    const newEndStr = newEnd.toISOString().split('T')[0];
+    // Escalate rent by escalation_rate if set
+    const escalationRate = l.escalation_rate ?? 0;
+    const newRent = escalationRate > 0
+      ? Math.round(l.rent_amount * (1 + escalationRate / 100))
+      : l.rent_amount;
+    setRenewingFromId(l.id);
+    setEditingId(null);
+    setForm({
+      property_id: l.property_id, unit_id: l.unit_id, tenant_id: l.tenant_id,
+      contract_type: l.contract_type, rent_amount: newRent, payment_frequency: l.payment_frequency,
+      currency: l.currency, start_date: newStartStr, end_date: newEndStr, due_day: l.due_day,
+      grace_period_days: l.grace_period_days, deposit_amount: l.deposit_amount,
+      utilities_responsibility: l.utilities_responsibility, notice_period_days: l.notice_period_days,
+      status: 'Active' as const,
+      late_fee_type: l.late_fee_type ?? 'percentage',
+      late_fee_rate: l.late_fee_rate ?? 0,
+      escalation_rate: l.escalation_rate ?? 0,
+      escalation_frequency: l.escalation_frequency ?? 'Yearly',
+      next_review_date: computeNextReview(newStartStr, l.escalation_frequency ?? 'Yearly'),
+    });
+    setShowModal(true);
+    setToast(escalationRate > 0 ? `Renewing lease with ${escalationRate}% rent escalation` : 'Renewing lease — review dates before saving');
+  };
+
   const openEdit = (l: typeof leases[0]) => {
     setEditingId(l.id);
     setForm({
@@ -135,9 +169,14 @@ export default function LeasesPage() {
       } else {
         addLease(form);
         if (form.status === 'Active') updateUnit(form.unit_id, { status: 'Occupied' });
+        // If this is a renewal, terminate the original lease
+        if (renewingFromId) {
+          updateLease(renewingFromId, { status: 'Terminated' });
+          setRenewingFromId(null);
+        }
       }
       setShowModal(false); setEditingId(null); setForm(defaultForm);
-      setToast(editingId ? 'Lease updated successfully' : 'Lease created successfully');
+      setToast(editingId ? 'Lease updated successfully' : renewingFromId ? 'Lease renewed — old lease terminated' : 'Lease created successfully');
     } finally {
       setSubmitting(false);
     }
@@ -260,6 +299,9 @@ export default function LeasesPage() {
                         {LEASE_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                       </select>
                       <button onClick={() => openEdit(lease)} className="text-blue-600 hover:text-blue-800 text-sm font-medium px-2">Edit</button>
+                      {(lease.status === 'Active') && (expired || expiringSoon) && (
+                        <button onClick={() => handleRenew(lease)} className="text-purple-600 hover:text-purple-800 text-sm font-medium px-2">Renew</button>
+                      )}
                       <button onClick={() => handleDuplicate(lease)} className="text-green-600 hover:text-green-800 text-sm font-medium px-2">Duplicate</button>
                       {deleteConfirmId === lease.id ? (
                         <>
@@ -299,8 +341,15 @@ export default function LeasesPage() {
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between p-6 border-b">
-              <h2 className="text-xl font-bold text-gray-800">{editingId ? 'Edit Lease' : 'Add Lease'}</h2>
-              <button onClick={() => { setShowModal(false); setEditingId(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">
+                  {editingId ? 'Edit Lease' : renewingFromId ? 'Renew Lease' : 'Add Lease'}
+                </h2>
+                {renewingFromId && (
+                  <p className="text-sm text-purple-600 mt-0.5">Renewing from lease — old lease will be marked Terminated</p>
+                )}
+              </div>
+              <button onClick={() => { setShowModal(false); setEditingId(null); setRenewingFromId(null); }} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
             </div>
             <form onSubmit={handleSubmit} className="p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -414,7 +463,7 @@ export default function LeasesPage() {
               </div>
               {form.status === 'Active' && <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">Setting status to <strong>Active</strong> will mark the unit as <strong>Occupied</strong>.</div>}
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-                <button type="button" onClick={() => { setShowModal(false); setEditingId(null); }} className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+                <button type="button" onClick={() => { setShowModal(false); setEditingId(null); setRenewingFromId(null); }} className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
                 <button type="submit" disabled={submitting} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                   {submitting ? 'Saving...' : (editingId ? 'Update' : 'Create Lease')}
                 </button>

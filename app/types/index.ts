@@ -87,6 +87,7 @@ export interface Lease {
   escalation_rate?: number;
   escalation_frequency?: 'Yearly' | '2 Years';
   next_review_date?: string;
+  balance_due?: number;
   created_at: string;
 }
 
@@ -225,6 +226,20 @@ export interface AuditLog {
   entity_type: string;
   entity_id: string;
   summary: string;
+  created_at: string;
+}
+
+export type VendorCategory = 'Plumbing' | 'Electrical' | 'Structural' | 'Carpentry' | 'Painting' | 'Cleaning' | 'General' | 'Other';
+
+export interface Vendor {
+  id: string;
+  landlord_id: string;
+  name: string;
+  phone: string;
+  email: string;
+  category: VendorCategory;
+  notes: string;
+  is_active: boolean;
   created_at: string;
 }
 

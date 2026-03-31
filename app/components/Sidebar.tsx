@@ -15,9 +15,11 @@ const navItems = [
   { href: '/ai-insights', label: 'AI Insights', icon: 'IN' },
   { href: '/properties', label: 'Properties', icon: 'P' },
   { href: '/tenants', label: 'Tenants', icon: 'T' },
+  { href: '/applications', label: 'Applications', icon: '📋' },
   { href: '/leases', label: 'Leases', icon: 'L' },
   { href: '/payments', label: 'Payments', icon: '$' },
   { href: '/maintenance', label: 'Maintenance', icon: 'M' },
+  { href: '/vendors', label: 'Vendors', icon: '🔧' },
   { href: '/expenses', label: 'Expenses', icon: 'E' },
   { href: '/tax-reports', label: 'Tax Reports', icon: 'R' },
   { href: '/reconcile', label: 'Reconcile', icon: '⚖' },
@@ -79,7 +81,7 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
               }`}>
               <span className="w-8 h-8 rounded bg-blue-800 flex items-center justify-center text-sm font-bold">{item.icon}</span>
               <span>{item.label}</span>
-              {item.href === '/properties' && pendingApps > 0 && (
+              {item.href === '/applications' && pendingApps > 0 && (
                 <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingApps}</span>
               )}
             </Link>

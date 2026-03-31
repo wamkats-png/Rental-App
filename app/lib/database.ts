@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import type {
   Landlord, Property, Unit, Tenant, Lease, Payment,
   MaintenanceRecord, Contract, Application, CommunicationLog,
-  Expense, CommTemplate, TeamMember, AuditLog
+  Expense, CommTemplate, TeamMember, AuditLog, Vendor
 } from '../types';
 
 // Helper: throw on error for void operations
@@ -204,6 +204,35 @@ export async function insertApplication(app: Omit<Application, 'id' | 'created_a
 
 export async function updateApplicationDB(id: string, updates: Partial<Application>): Promise<void> {
   await exec(supabase!.from('applications').update(updates).eq('id', id));
+}
+
+export async function deleteApplicationDB(id: string): Promise<void> {
+  await exec(supabase!.from('applications').delete().eq('id', id));
+}
+
+// ── VENDORS ──
+
+export async function fetchVendors(landlordId: string): Promise<Vendor[]> {
+  if (!supabase) return [];
+  return query(
+    supabase.from('vendors').select('*')
+      .eq('landlord_id', landlordId)
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+  );
+}
+
+export async function insertVendor(vendor: Omit<Vendor, 'id' | 'created_at'>): Promise<Vendor> {
+  return query(supabase!.from('vendors').insert(vendor).select().single());
+}
+
+export async function updateVendorDB(id: string, updates: Partial<Vendor>): Promise<void> {
+  await exec(supabase!.from('vendors').update(updates).eq('id', id));
+}
+
+export async function deleteVendorDB(id: string): Promise<void> {
+  // Soft-delete: set is_active = false to preserve maintenance history
+  await exec(supabase!.from('vendors').update({ is_active: false }).eq('id', id));
 }
 
 // ── COMMUNICATION LOGS ──

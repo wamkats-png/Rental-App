@@ -22,7 +22,7 @@ function generateReceiptNumber(landlordId?: string) {
 }
 
 export default function PaymentsPage() {
-  const { landlord, properties, units, tenants, leases, payments, loading, addPayment, deletePayment } = useApp();
+  const { landlord, properties, units, tenants, leases, payments, loading, addPayment, deletePayment, updateLease } = useApp();
   const [showModal, setShowModal] = useState(false);
   const [showReceipt, setShowReceipt] = useState<string | null>(null);
   const [filterMonth, setFilterMonth] = useState('');
@@ -83,6 +83,12 @@ export default function PaymentsPage() {
       payment_method: form.payment_method, period_start: form.period_start, period_end: form.period_end,
       withholding_tax_amount: form.withholding_tax_amount, receipt_number: form.receipt_number,
     });
+    // Update lease balance_due: positive = owes money, 0 = current
+    const frequencyMultiplier = lease.payment_frequency === 'Quarterly' ? 3 : lease.payment_frequency === 'Yearly' ? 12 : 1;
+    const expectedThisPeriod = lease.rent_amount * frequencyMultiplier;
+    const currentBalance = lease.balance_due ?? 0;
+    const newBalanceDue = Math.max(0, currentBalance + expectedThisPeriod - form.amount);
+    updateLease(lease.id, { balance_due: newBalanceDue });
 
     // Fire SMS receipt confirmation (fire-and-forget)
     const tenant = tenants.find(t => t.id === lease.tenant_id);
@@ -313,11 +319,30 @@ export default function PaymentsPage() {
                     const t = tenants.find(x => x.id === l.tenant_id);
                     const p = properties.find(x => x.id === l.property_id);
                     const u = units.find(x => x.id === l.unit_id);
-                    return <option key={l.id} value={l.id}>{t?.full_name} - {p?.name} / {u?.code} ({formatUGX(l.rent_amount)})</option>;
+                    const bal = l.balance_due ?? 0;
+                    return <option key={l.id} value={l.id}>{t?.full_name} - {p?.name} / {u?.code} ({formatUGX(l.rent_amount)}{bal > 0 ? ` + ${formatUGX(bal)} owed` : ''})</option>;
                   })}
                 </select>
                 {formErrors.lease_id && <p className="text-red-500 text-xs mt-1">{formErrors.lease_id}</p>}
               </div>
+              {selectedLease && (selectedLease.balance_due ?? 0) > 0 && (
+                <div className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
+                  <div>
+                    <span className="text-orange-700 font-medium">Outstanding balance from previous periods:</span>
+                    <span className="text-orange-800 font-bold ml-2">{formatUGX(selectedLease.balance_due ?? 0)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const multiplier = selectedLease.payment_frequency === 'Quarterly' ? 3 : selectedLease.payment_frequency === 'Yearly' ? 12 : 1;
+                      handleAmountChange(selectedLease.rent_amount * multiplier + (selectedLease.balance_due ?? 0));
+                    }}
+                    className="text-orange-700 text-xs font-semibold hover:text-orange-800 underline whitespace-nowrap"
+                  >
+                    Pay full + balance
+                  </button>
+                </div>
+              )}
               {suggestedLateFee > 0 && (
                 <div className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm">
                   <span className="text-orange-700">Suggested late fee (overdue):</span>
