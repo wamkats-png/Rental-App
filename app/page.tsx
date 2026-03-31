@@ -155,7 +155,7 @@ export default function Dashboard() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Dashboard</h1>
+        <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
         {properties.length > 1 && (
           <select
             value={selectedPropertyId}

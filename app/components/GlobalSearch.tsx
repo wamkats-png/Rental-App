@@ -96,6 +96,10 @@ export default function GlobalSearch({ onClose }: { onClose: () => void }) {
             onChange={e => { setQuery(e.target.value); setSelectedIndex(0); }}
             onKeyDown={handleKeyDown}
             placeholder="Search tenants, properties, leases..."
+            aria-label="Search tenants, properties, leases"
+            role="combobox"
+            aria-expanded={query.length > 0}
+            aria-autocomplete="list"
             className="flex-1 text-gray-800 placeholder-gray-400 outline-none text-sm"
           />
           <kbd className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded shrink-0">Esc</kbd>

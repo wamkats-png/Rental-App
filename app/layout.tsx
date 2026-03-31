@@ -12,6 +12,17 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'RentFlow Uganda',
   description: 'Property management for Ugandan landlords',
+  openGraph: {
+    title: 'RentFlow Uganda',
+    description: 'Property management for Ugandan landlords',
+    type: 'website',
+    locale: 'en_UG',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'RentFlow Uganda',
+    description: 'Property management for Ugandan landlords',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
