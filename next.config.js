@@ -5,6 +5,8 @@ const nextConfig = {
       ...config.watchOptions,
       ignored: ['**/supabase/**', '**/node_modules/**'],
     };
+    // pdfjs-dist requires canvas to be aliased away in browser builds
+    config.resolve.alias.canvas = false;
     return config;
   },
 }

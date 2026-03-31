@@ -19,25 +19,133 @@ interface ImportRow {
   mapped: Record<string, string>;
 }
 
+const REQUIRED_FIELDS: Record<Tab, string[]> = {
+  tenants: ['full_name', 'phone', 'national_id'],
+  properties: ['name', 'address', 'district'],
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  full_name: 'Full Name', phone: 'Phone', email: 'Email',
+  national_id: 'National ID (NIN)', address: 'Address', comm_preference: 'Comm. Preference',
+  name: 'Property Name', district: 'District', lc_area: 'LC Area',
+  property_type: 'Property Type', property_rates_ref: 'Rates Ref',
+};
+
+const COMM_OPTIONS = ['WhatsApp', 'SMS', 'Email'];
+const PROPERTY_TYPES = ['Residential', 'Commercial', 'Mixed'];
+
 export default function ImportPage() {
   const { landlord, addTenant, addProperty } = useApp();
   const [activeTab, setActiveTab] = useState<Tab>('tenants');
   const [mode, setMode] = useState<ImportMode>('standard');
   const [rows, setRows] = useState<ImportRow[]>([]);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [importing, setImporting] = useState(false);
   const [aiParsing, setAiParsing] = useState(false);
+  const [aiParsingLabel, setAiParsingLabel] = useState('');
   const [aiError, setAiError] = useState('');
   const [importedCount, setImportedCount] = useState(0);
   const [done, setDone] = useState(false);
+  const [showCompletion, setShowCompletion] = useState(false);
+  const [completionData, setCompletionData] = useState<Record<number, Record<string, string>>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const validRows = rows.filter(r => r.errors.length === 0);
-  const errorRows = rows.filter(r => r.errors.length > 0);
+  const tabHeaders: Record<Tab, string[]> = {
+    tenants: ['full_name', 'phone', 'email', 'national_id', 'address', 'comm_preference'],
+    properties: ['name', 'address', 'district', 'lc_area', 'property_type', 'property_rates_ref'],
+  };
+
+  const selectedErrorRows = rows
+    .map((r, i) => ({ ...r, index: i }))
+    .filter(r => selectedIndices.has(r.index) && r.errors.length > 0);
+
+  // ── Text extraction ────────────────────────────────────────────────────────
+
+  const extractText = (file: File): Promise<string> => {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const isExcel = ['xlsx', 'xls', 'ods'].includes(ext)
+      || file.type.includes('spreadsheet') || file.type.includes('excel');
+    const isPdf = ext === 'pdf' || file.type === 'application/pdf';
+    const isDocx = ['docx', 'doc'].includes(ext)
+      || file.type.includes('wordprocessingml') || file.type.includes('msword');
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file'));
+
+      if (isPdf) {
+        setAiParsingLabel('Reading PDF…');
+        reader.onload = async e => {
+          try {
+            const pdfjsLib = await import('pdfjs-dist');
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+              `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+            const pdf = await pdfjsLib.getDocument({ data: e.target?.result as ArrayBuffer }).promise;
+            const pages: string[] = [];
+            for (let i = 1; i <= pdf.numPages; i++) {
+              const page = await pdf.getPage(i);
+              const content = await page.getTextContent();
+              pages.push(
+                content.items
+                  .map(item => ('str' in item ? (item as { str: string }).str : ''))
+                  .join(' ')
+              );
+            }
+            resolve(pages.join('\n'));
+          } catch {
+            reject(new Error('Could not parse PDF. Make sure it contains selectable text (not a scanned image).'));
+          }
+        };
+        reader.readAsArrayBuffer(file);
+
+      } else if (isDocx) {
+        setAiParsingLabel('Reading Word document…');
+        reader.onload = async e => {
+          try {
+            const mammoth = await import('mammoth');
+            const result = await mammoth.extractRawText({ arrayBuffer: e.target?.result as ArrayBuffer });
+            resolve(result.value);
+          } catch {
+            reject(new Error('Could not parse Word document.'));
+          }
+        };
+        reader.readAsArrayBuffer(file);
+
+      } else if (isExcel) {
+        setAiParsingLabel('Reading Excel file…');
+        reader.onload = async e => {
+          try {
+            const XLSX = await import('xlsx');
+            const wb = XLSX.read(e.target?.result, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            resolve(XLSX.utils.sheet_to_csv(ws));
+          } catch {
+            reject(new Error('Could not parse Excel file. Please try saving it as CSV first.'));
+          }
+        };
+        reader.readAsArrayBuffer(file);
+
+      } else {
+        reader.onload = e => resolve(e.target?.result as string ?? '');
+        reader.readAsText(file);
+      }
+    });
+  };
+
+  // ── Parsers ────────────────────────────────────────────────────────────────
+
+  const applyRows = (mapped: ImportRow[]) => {
+    setRows(mapped);
+    // Auto-select valid rows; error rows start unchecked
+    setSelectedIndices(new Set(
+      mapped.map((r, i) => r.errors.length === 0 ? i : -1).filter(i => i >= 0)
+    ));
+  };
 
   const parseStandard = (text: string) => {
     const parsed = parseCSV(text);
     if (parsed.length === 0) return;
-    const mapped: ImportRow[] = parsed.map(row => {
+    applyRows(parsed.map(row => {
       if (activeTab === 'tenants') {
         const m = mapTenantRow(row, landlord.id);
         const { errors, ...rest } = m;
@@ -47,12 +155,12 @@ export default function ImportPage() {
         const { errors, ...rest } = m;
         return { row, errors, mapped: rest as unknown as Record<string, string> };
       }
-    });
-    setRows(mapped);
+    }));
   };
 
   const parseWithAI = async (text: string) => {
     setAiParsing(true);
+    setAiParsingLabel('Claude is parsing your file…');
     setAiError('');
     try {
       const res = await fetch('/api/ai-import', {
@@ -65,58 +173,46 @@ export default function ImportPage() {
         setAiError(data.error ?? 'AI parsing failed. Try again or use Standard CSV.');
         return;
       }
-      const mapped: ImportRow[] = (data.rows as Record<string, string>[]).map(aiRow => {
+      applyRows((data.rows as Record<string, string>[]).map(aiRow => {
         const { errors: rawErrors, ...fields } = aiRow;
         const errors: string[] = Array.isArray(rawErrors) ? rawErrors : [];
         return { row: fields as ParsedRow, errors, mapped: { ...fields, landlord_id: landlord.id } };
-      });
-      setRows(mapped);
+      }));
     } catch {
       setAiError('Network error. Please try again.');
     } finally {
       setAiParsing(false);
+      setAiParsingLabel('');
     }
-  };
-
-  const extractText = (file: File): Promise<string> => {
-    const isExcel = /\.(xlsx|xls|ods)$/i.test(file.name) || file.type.includes('spreadsheet') || file.type.includes('excel');
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      if (isExcel) {
-        reader.onload = async e => {
-          try {
-            const XLSX = await import('xlsx');
-            const wb = XLSX.read(e.target?.result, { type: 'array' });
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            resolve(XLSX.utils.sheet_to_csv(ws));
-          } catch {
-            reject(new Error('Could not parse Excel file. Please try saving it as CSV first.'));
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      } else {
-        reader.onload = e => resolve(e.target?.result as string ?? '');
-        reader.readAsText(file);
-      }
-    });
   };
 
   const handleFile = (file: File) => {
     setRows([]);
+    setSelectedIndices(new Set());
     setDone(false);
     setImportedCount(0);
     setAiError('');
-    extractText(file).then(text => {
-      if (!text?.trim()) return;
-      if (mode === 'ai') {
-        parseWithAI(text);
-      } else {
-        parseStandard(text);
-      }
-    }).catch(err => {
-      setAiError(err.message);
-    });
+    setShowCompletion(false);
+
+    if (mode === 'ai') {
+      setAiParsing(true);
+      extractText(file)
+        .then(text => {
+          if (!text?.trim()) {
+            setAiParsing(false);
+            return;
+          }
+          return parseWithAI(text);
+        })
+        .catch(err => {
+          setAiParsing(false);
+          setAiError(err.message);
+        });
+    } else {
+      extractText(file)
+        .then(text => { if (text?.trim()) parseStandard(text); })
+        .catch(err => setAiError(err.message));
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -125,46 +221,94 @@ export default function ImportPage() {
     if (file) handleFile(file);
   };
 
-  const handleImport = async () => {
-    if (validRows.length === 0) return;
+  // ── Selection ──────────────────────────────────────────────────────────────
+
+  const toggleSelect = (i: number) => {
+    setSelectedIndices(prev => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIndices.size === rows.length) {
+      setSelectedIndices(new Set());
+    } else {
+      setSelectedIndices(new Set(rows.map((_, i) => i)));
+    }
+  };
+
+  const selectValid = () => {
+    setSelectedIndices(new Set(
+      rows.map((r, i) => r.errors.length === 0 ? i : -1).filter(i => i >= 0)
+    ));
+  };
+
+  // ── Import ─────────────────────────────────────────────────────────────────
+
+  const handleImportClick = () => {
+    if (selectedIndices.size === 0) return;
+    if (selectedErrorRows.length > 0) {
+      const cd: Record<number, Record<string, string>> = {};
+      for (const r of selectedErrorRows) {
+        cd[r.index] = { ...r.mapped };
+      }
+      setCompletionData(cd);
+      setShowCompletion(true);
+    } else {
+      doImport({});
+    }
+  };
+
+  const doImport = async (overrides: Record<number, Record<string, string>>) => {
     setImporting(true);
     let count = 0;
-    for (const r of validRows) {
+    for (const idx of Array.from(selectedIndices)) {
+      const base = rows[idx].mapped;
+      const finalData = overrides[idx] ? { ...base, ...overrides[idx] } : base;
       try {
         if (activeTab === 'tenants') {
-          await addTenant(r.mapped as Parameters<typeof addTenant>[0]);
+          await addTenant(finalData as Parameters<typeof addTenant>[0]);
         } else {
-          await addProperty(r.mapped as Parameters<typeof addProperty>[0]);
+          await addProperty(finalData as Parameters<typeof addProperty>[0]);
         }
         count++;
-      } catch {
-        // individual row failures don't abort the batch
-      }
+      } catch { /* skip individual failures */ }
     }
     setImportedCount(count);
     setImporting(false);
+    setShowCompletion(false);
     setDone(true);
     setRows([]);
   };
 
+  const handleCompletionSubmit = () => {
+    doImport(completionData);
+  };
+
   const reset = () => {
     setRows([]);
+    setSelectedIndices(new Set());
     setDone(false);
     setImportedCount(0);
     setAiError('');
+    setShowCompletion(false);
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const tabHeaders: Record<Tab, string[]> = {
-    tenants: ['full_name', 'phone', 'email', 'national_id', 'address', 'comm_preference'],
-    properties: ['name', 'address', 'district', 'lc_area', 'property_type', 'property_rates_ref'],
-  };
+  const allSelected = rows.length > 0 && selectedIndices.size === rows.length;
+  const acceptTypes = mode === 'ai'
+    ? '.csv,.tsv,.txt,.xlsx,.xls,.ods,.pdf,.docx,.doc'
+    : '.csv';
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Import Data</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Bulk import tenants or properties from a CSV file</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Bulk import tenants or properties from any file</p>
       </div>
 
       {/* Tab selector */}
@@ -199,7 +343,7 @@ export default function ImportPage() {
         </button>
       </div>
 
-      {/* Mode description */}
+      {/* AI mode banner */}
       {mode === 'ai' && (
         <div className="bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700 rounded-lg p-4 mb-6">
           <div className="flex items-start gap-3">
@@ -211,8 +355,13 @@ export default function ImportPage() {
             <div>
               <p className="text-sm font-semibold text-violet-800 dark:text-violet-200">AI Smart Import — powered by Claude</p>
               <p className="text-xs text-violet-600 dark:text-violet-300 mt-1">
-                Upload any file — doesn't have to match our template exactly. Claude will detect your column names, remap them to the correct fields, and flag any issues. Supports CSV, TSV, Excel (.xlsx/.xls), semicolon-delimited, and other formats.
+                Upload any file format. Claude maps your columns automatically, handles any naming convention, and flags missing data. You can select rows with errors and fill in the gaps before importing.
               </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['CSV', 'Excel (.xlsx)', 'PDF', 'Word (.docx)', 'TSV'].map(fmt => (
+                  <span key={fmt} className="text-xs bg-violet-100 dark:bg-violet-800 text-violet-700 dark:text-violet-300 px-2 py-0.5 rounded-full">{fmt}</span>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -239,6 +388,8 @@ export default function ImportPage() {
         </div>
       )}
 
+      {/* ── States ── */}
+
       {done ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
           <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -248,6 +399,7 @@ export default function ImportPage() {
           <p className="text-gray-500 dark:text-gray-400 mb-6">{importedCount} {activeTab} imported successfully.</p>
           <button onClick={reset} className="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">Import More</button>
         </div>
+
       ) : aiParsing ? (
         /* AI parsing loader */
         <div className="border-2 border-dashed border-violet-300 dark:border-violet-600 rounded-xl p-12 text-center bg-violet-50/50 dark:bg-violet-900/10">
@@ -260,9 +412,10 @@ export default function ImportPage() {
               </svg>
             </div>
           </div>
-          <p className="text-violet-700 dark:text-violet-300 font-semibold text-base mb-1">Claude is parsing your file…</p>
+          <p className="text-violet-700 dark:text-violet-300 font-semibold text-base mb-1">{aiParsingLabel || 'Processing…'}</p>
           <p className="text-sm text-violet-500 dark:text-violet-400">Detecting columns, mapping fields, and validating rows</p>
         </div>
+
       ) : rows.length === 0 ? (
         /* Drop zone */
         <div>
@@ -279,45 +432,78 @@ export default function ImportPage() {
             onClick={() => fileRef.current?.click()}
           >
             {mode === 'ai' ? (
-              <svg className="w-12 h-12 text-violet-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
+              <div className="flex justify-center gap-3 mb-4">
+                {/* PDF */}
+                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center">
+                  <span className="text-xs font-bold text-red-600">PDF</span>
+                </div>
+                {/* DOCX */}
+                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                  <span className="text-xs font-bold text-blue-600">DOC</span>
+                </div>
+                {/* XLSX */}
+                <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                  <span className="text-xs font-bold text-green-600">XLS</span>
+                </div>
+                {/* CSV */}
+                <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                  <span className="text-xs font-bold text-gray-600 dark:text-gray-300">CSV</span>
+                </div>
+              </div>
             ) : (
               <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
             )}
             <p className={`font-medium mb-1 ${mode === 'ai' ? 'text-violet-700 dark:text-violet-300' : 'text-gray-600 dark:text-gray-300'}`}>
-              {mode === 'ai' ? 'Drop any file here — Claude will figure it out' : 'Drop your CSV file here'}
+              {mode === 'ai' ? 'Drop any file — Claude will figure it out' : 'Drop your CSV file here'}
             </p>
             <p className="text-sm text-gray-400 dark:text-gray-500">
-              {mode === 'ai' ? 'CSV, TSV, Excel (.xlsx), or any text-delimited format' : 'or click to browse'}
+              {mode === 'ai' ? 'PDF, Word (.docx), Excel (.xlsx), CSV, TSV' : 'or click to browse'}
             </p>
             {mode === 'ai' && (
-              <p className="text-xs text-violet-400 dark:text-violet-500 mt-2">Any column names — Claude will map them automatically</p>
+              <p className="text-xs text-violet-400 dark:text-violet-500 mt-2">Any column names — Claude maps them automatically</p>
             )}
             <input
               ref={fileRef}
               type="file"
-              accept={mode === 'ai' ? '.csv,.tsv,.txt,.xlsx,.xls,.ods' : '.csv'}
+              accept={acceptTypes}
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
             />
           </div>
         </div>
+
       ) : (
-        /* Preview table */
+        /* Preview table with selection */
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex gap-3 text-sm items-center">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3 text-sm flex-wrap">
               {mode === 'ai' && (
                 <span className="inline-flex items-center gap-1 text-xs bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 px-2 py-1 rounded-full font-medium">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                   Parsed by Claude
                 </span>
               )}
-              <span className="text-green-700 dark:text-green-400 font-medium">{validRows.length} valid</span>
-              {errorRows.length > 0 && <span className="text-red-600 dark:text-red-400 font-medium">{errorRows.length} with errors</span>}
+              <span className="text-green-700 dark:text-green-400 font-medium">
+                {rows.filter(r => r.errors.length === 0).length} valid
+              </span>
+              {rows.filter(r => r.errors.length > 0).length > 0 && (
+                <span className="text-orange-600 dark:text-orange-400 font-medium">
+                  {rows.filter(r => r.errors.length > 0).length} with errors
+                </span>
+              )}
+              <span className="text-gray-400">·</span>
+              <span className="text-blue-600 dark:text-blue-400 font-medium">{selectedIndices.size} selected</span>
+              <button
+                onClick={selectValid}
+                className="text-xs text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 underline underline-offset-2"
+              >
+                Select valid only
+              </button>
             </div>
-            <button onClick={reset} className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Upload different file</button>
+            <button onClick={reset} className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+              Upload different file
+            </button>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
@@ -325,6 +511,15 @@ export default function ImportPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
                   <tr>
+                    <th className="px-3 py-3 text-left w-10">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={el => { if (el) el.indeterminate = !allSelected && selectedIndices.size > 0; }}
+                        onChange={toggleSelectAll}
+                        className="rounded"
+                      />
+                    </th>
                     <th className="px-3 py-3 text-left">Status</th>
                     {tabHeaders[activeTab].map(h => (
                       <th key={h} className="px-3 py-3 text-left">{h}</th>
@@ -333,11 +528,35 @@ export default function ImportPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {rows.map((r, i) => (
-                    <tr key={i} className={r.errors.length > 0 ? 'bg-red-50 dark:bg-red-900/10' : ''}>
-                      <td className="px-3 py-2">
+                    <tr
+                      key={i}
+                      onClick={() => toggleSelect(i)}
+                      className={`cursor-pointer transition-colors ${
+                        selectedIndices.has(i)
+                          ? r.errors.length > 0
+                            ? 'bg-orange-50 dark:bg-orange-900/10'
+                            : 'bg-blue-50 dark:bg-blue-900/10'
+                          : r.errors.length > 0
+                            ? 'bg-red-50/40 dark:bg-red-900/5 opacity-60'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      }`}
+                    >
+                      <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIndices.has(i)}
+                          onChange={() => toggleSelect(i)}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
                         {r.errors.length === 0
                           ? <span className="text-green-600 text-xs font-medium">✓ OK</span>
-                          : <span className="text-red-600 text-xs font-medium" title={r.errors.join(', ')}>✗ {r.errors[0]}</span>
+                          : (
+                            <span className="text-orange-600 text-xs font-medium" title={r.errors.join(', ')}>
+                              ⚠ {r.errors[0]}
+                            </span>
+                          )
                         }
                       </td>
                       {tabHeaders[activeTab].map(h => (
@@ -352,18 +571,144 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {validRows.length > 0 && (
+          {selectedIndices.size > 0 ? (
             <button
-              onClick={handleImport}
+              onClick={handleImportClick}
               disabled={importing}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 text-sm"
+              className="w-full py-3 rounded-lg font-medium text-sm disabled:opacity-50 transition bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {importing ? 'Importing...' : `Import ${validRows.length} ${activeTab}`}
+              {importing
+                ? 'Importing…'
+                : selectedErrorRows.length > 0
+                  ? `Import ${selectedIndices.size} ${activeTab} — complete ${selectedErrorRows.length} with missing fields →`
+                  : `Import ${selectedIndices.size} ${activeTab}`
+              }
             </button>
+          ) : (
+            <p className="text-center text-gray-400 dark:text-gray-500 text-sm">Select rows above to import</p>
           )}
-          {errorRows.length > 0 && validRows.length === 0 && (
-            <p className="text-center text-red-600 dark:text-red-400 text-sm">All rows have errors. Please fix your file and re-upload.</p>
-          )}
+        </div>
+      )}
+
+      {/* ── Completion Modal ── */}
+      {showCompletion && (
+        <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl my-8">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-white">Complete Missing Details</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  {selectedErrorRows.length} record{selectedErrorRows.length !== 1 ? 's' : ''} need required fields filled in
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCompletion(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[60vh] overflow-y-auto">
+              {selectedErrorRows.map(({ index, errors }) => {
+                const cd = completionData[index] ?? {};
+                const identifier = cd.full_name || cd.name || rows[index].row.full_name || rows[index].row.name || `Row ${index + 1}`;
+                const missingRequired = REQUIRED_FIELDS[activeTab].filter(f => !cd[f]?.trim());
+
+                return (
+                  <div key={index} className="border border-orange-200 dark:border-orange-700 rounded-xl p-5 bg-orange-50/50 dark:bg-orange-900/10">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-7 h-7 bg-orange-100 dark:bg-orange-800 rounded-full flex items-center justify-center shrink-0">
+                        <span className="text-xs font-bold text-orange-600 dark:text-orange-300">{index + 1}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800 dark:text-white">{identifier}</p>
+                        <p className="text-xs text-orange-600 dark:text-orange-400">{errors.join(' · ')}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {REQUIRED_FIELDS[activeTab].map(field => {
+                        const isMissing = missingRequired.includes(field);
+                        if (field === 'comm_preference') {
+                          return (
+                            <div key={field}>
+                              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                {FIELD_LABELS[field]} <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={cd[field] ?? 'WhatsApp'}
+                                onChange={e => setCompletionData(prev => ({
+                                  ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value },
+                                }))}
+                                className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 dark:border-orange-500' : 'border-gray-300 dark:border-gray-600'}`}
+                              >
+                                {COMM_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+                        if (field === 'property_type') {
+                          return (
+                            <div key={field}>
+                              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                {FIELD_LABELS[field]} <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={cd[field] ?? 'Residential'}
+                                onChange={e => setCompletionData(prev => ({
+                                  ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value },
+                                }))}
+                                className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 dark:border-orange-500' : 'border-gray-300 dark:border-gray-600'}`}
+                              >
+                                {PROPERTY_TYPES.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={field}>
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                              {FIELD_LABELS[field] ?? field} <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              value={cd[field] ?? ''}
+                              onChange={e => setCompletionData(prev => ({
+                                ...prev, [index]: { ...(prev[index] ?? {}), [field]: e.target.value },
+                              }))}
+                              placeholder={`Enter ${FIELD_LABELS[field] ?? field}`}
+                              className={`w-full border rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-700 dark:text-white ${isMissing ? 'border-orange-400 dark:border-orange-500 ring-1 ring-orange-300' : 'border-gray-300 dark:border-gray-600'}`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between p-6 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {selectedIndices.size - selectedErrorRows.length} valid row{selectedIndices.size - selectedErrorRows.length !== 1 ? 's' : ''} will also be imported
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCompletion(false)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleCompletionSubmit}
+                  disabled={importing}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {importing ? 'Importing…' : `Import ${selectedIndices.size} ${activeTab}`}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
