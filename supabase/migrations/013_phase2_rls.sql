@@ -183,10 +183,10 @@ CREATE POLICY "Landlord: insert own payments"
 
 -- ─── STEP 8: Additional performance indexes ──────────────────────────────────
 -- Only add indexes that don't already exist (from 002_create_business_tables.sql)
+-- NOTE: tenants has no unit_id column — that FK lives in leases.
 
 CREATE INDEX IF NOT EXISTS idx_properties_landlord_id  ON public.properties(landlord_id);
 CREATE INDEX IF NOT EXISTS idx_units_status            ON public.units(status);
-CREATE INDEX IF NOT EXISTS idx_tenants_unit_id         ON public.tenants(unit_id);
 CREATE INDEX IF NOT EXISTS idx_leases_status           ON public.leases(status);
 CREATE INDEX IF NOT EXISTS idx_payments_tenant_id      ON public.payments(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_payments_period_start   ON public.payments(period_start);
