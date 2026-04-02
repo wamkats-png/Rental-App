@@ -36,8 +36,9 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
   const { isFree, propertiesUsed, propertiesMax } = useSubscription();
 
   return (
-    <aside className="w-64 bg-blue-900 text-white min-h-screen flex flex-col">
-      <div className="p-4 border-b border-blue-800 flex items-center justify-between">
+    <aside className="w-64 bg-blue-900 text-white h-full flex flex-col overflow-hidden">
+      {/* ── Header — never scrolls away ── */}
+      <div className="flex-shrink-0 p-4 border-b border-blue-800 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">RentFlow Uganda</h1>
           <p className="text-blue-300 text-sm">Property Management</p>
@@ -46,7 +47,7 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
       </div>
 
       {user && (
-        <div className="p-4 border-b border-blue-800">
+        <div className="flex-shrink-0 p-4 border-b border-blue-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-blue-700 flex items-center justify-center text-sm font-bold">
               {user.email?.[0].toUpperCase() || 'U'}
@@ -59,7 +60,7 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
         </div>
       )}
 
-      <div className="px-2 pt-2">
+      <div className="flex-shrink-0 px-2 pt-2">
         <button
           onClick={onSearchOpen}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-blue-300 hover:bg-blue-800 transition-colors text-sm mb-1"
@@ -71,7 +72,9 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
           <kbd className="text-xs bg-blue-800 px-1.5 py-0.5 rounded opacity-75">⌘K</kbd>
         </button>
       </div>
-      <nav className="flex-1 p-2">
+
+      {/* ── Nav — scrollable on mobile when items overflow ── */}
+      <nav className="flex-1 p-2 overflow-y-auto overscroll-contain">
         {navItems.map(item => {
           const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
           return (
@@ -89,7 +92,8 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
         })}
       </nav>
 
-      <div className="p-4 border-t border-blue-800">
+      {/* ── Footer — never scrolls away ── */}
+      <div className="flex-shrink-0 p-4 border-t border-blue-800">
         <button
           onClick={signOut}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-blue-200 hover:bg-blue-800 transition-colors"
@@ -100,7 +104,7 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
       </div>
 
       {isFree && (
-        <div className="p-3 mx-3 mb-3 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl text-white text-xs">
+        <div className="flex-shrink-0 p-3 mx-3 mb-3 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl text-white text-xs">
           <p className="font-semibold mb-0.5">Free Plan</p>
           <p className="opacity-80 mb-2">{propertiesUsed}/{propertiesMax} properties used</p>
           <Link href="/upgrade" className="block text-center bg-white text-purple-700 font-semibold py-1.5 rounded-lg hover:bg-purple-50 transition-colors">
@@ -109,7 +113,7 @@ export default function Sidebar({ onSearchOpen }: { onSearchOpen?: () => void })
         </div>
       )}
 
-      <div className="p-4 border-t border-blue-800 text-blue-300 text-xs">
+      <div className="flex-shrink-0 p-4 border-t border-blue-800 text-blue-300 text-xs">
         RentFlow Uganda v1.0
       </div>
     </aside>

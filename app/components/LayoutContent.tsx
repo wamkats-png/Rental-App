@@ -54,7 +54,7 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
       )}
 
       {/* Sidebar — slides in on mobile, always visible on md+ */}
-      <div className={`fixed md:static inset-y-0 left-0 z-40 md:z-auto transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <div className={`fixed md:static inset-y-0 left-0 z-40 md:z-auto h-full md:h-auto transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <Sidebar onSearchOpen={() => setSearchOpen(true)} />
       </div>
 
