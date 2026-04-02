@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { RateLimitBanner } from '../components/RateLimitBanner';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -22,6 +23,7 @@ export default function AIInsightsPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [rateLimitMs, setRateLimitMs] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -81,6 +83,11 @@ export default function AIInsightsPage() {
         }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        setRateLimitMs(data.retryAfterMs ?? 60_000);
+        setMessages(messages); // revert optimistic message
+        return;
+      }
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to get response');
       setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
     } catch (e: any) {
@@ -169,6 +176,9 @@ export default function AIInsightsPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>
         )}
+        {rateLimitMs > 0 && (
+          <RateLimitBanner retryAfterMs={rateLimitMs} onReady={() => setRateLimitMs(0)} />
+        )}
 
         <div ref={bottomRef} />
       </div>
@@ -207,7 +217,7 @@ export default function AIInsightsPage() {
         />
         <button
           onClick={() => sendMessage(input)}
-          disabled={!input.trim() || loading}
+          disabled={!input.trim() || loading || rateLimitMs > 0}
           className="w-9 h-9 bg-blue-600 text-white rounded-lg flex items-center justify-center hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           aria-label="Send"
         >

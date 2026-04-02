@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatUGX } from '../lib/utils';
+import { RateLimitBanner } from '../components/RateLimitBanner';
 
 interface ContractData {
   tenant_name?: string;
@@ -34,6 +35,7 @@ export default function AIContractPage() {
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimitMs, setRateLimitMs] = useState(0);
   const [result, setResult] = useState<ContractData | null>(null);
   const [showContract, setShowContract] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -94,6 +96,10 @@ export default function AIContractPage() {
 
       const data = await res.json();
 
+      if (res.status === 429) {
+        setRateLimitMs(data.retryAfterMs ?? 60_000);
+        return;
+      }
       if (!res.ok) {
         throw new Error(data.error || 'Failed to process contract');
       }
@@ -278,12 +284,17 @@ export default function AIContractPage() {
               {error}
             </div>
           )}
+          {rateLimitMs > 0 && (
+            <div className="mt-4">
+              <RateLimitBanner retryAfterMs={rateLimitMs} onReady={() => setRateLimitMs(0)} />
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex items-center gap-3 mt-5">
             <button
               onClick={handleSubmit}
-              disabled={loading || (mode === 'text' && !textInput.trim()) || (mode === 'image' && !imageBase64)}
+              disabled={loading || rateLimitMs > 0 || (mode === 'text' && !textInput.trim()) || (mode === 'image' && !imageBase64)}
               className="bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
             >
               {loading ? (

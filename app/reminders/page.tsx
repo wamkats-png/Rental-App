@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { RateLimitBanner } from '../components/RateLimitBanner';
 import { useApp } from '../context/AppContext';
 import { resolveTemplate, formatUGX } from '../lib/utils';
 
@@ -29,6 +30,7 @@ export default function RemindersPage() {
   const [generatedMessage, setGeneratedMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [rateLimitMs, setRateLimitMs] = useState(0);
   const [copied, setCopied] = useState(false);
   const [logged, setLogged] = useState(false);
 
@@ -138,6 +140,10 @@ export default function RemindersPage() {
         }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        setRateLimitMs(data.retryAfterMs ?? 60_000);
+        return;
+      }
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to generate message');
       setGeneratedMessage(data.message);
     } catch (e: any) {
@@ -202,34 +208,41 @@ export default function RemindersPage() {
     setBulkLoading(true);
     setBulkProgress(0);
     setBulkMessages({});
+    setRateLimitMs(0);
 
-    const results = await Promise.all(
-      ids.map(async (leaseId, i) => {
-        const target = reminderTargets.find(t => t.leaseId === leaseId)!;
-        try {
-          const res = await fetch('/api/ai-reminders', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tenantName: target.tenantName,
-              landlordName: landlord.name,
-              amountDue: target.rentAmount,
-              currency: target.currency,
-              dueDay: target.dueDay,
-              propertyAddress: `${target.propertyName}${target.unitCode ? ` - ${target.unitCode}` : ''}`,
-              language,
-              daysOverdue: target.daysOverdue,
-            }),
-          });
-          const data = await res.json();
-          setBulkProgress(i + 1);
-          return [leaseId, data.success ? data.message : `Error: ${data.error}`] as [string, string];
-        } catch {
-          setBulkProgress(i + 1);
-          return [leaseId, 'Failed to generate'] as [string, string];
+    // Sequential — avoids thundering herd on the 20/min rate limit
+    const results: [string, string][] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const leaseId = ids[i];
+      const target = reminderTargets.find(t => t.leaseId === leaseId)!;
+      try {
+        const res = await fetch('/api/ai-reminders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantName: target.tenantName,
+            landlordName: landlord.name,
+            amountDue: target.rentAmount,
+            currency: target.currency,
+            dueDay: target.dueDay,
+            propertyAddress: `${target.propertyName}${target.unitCode ? ` - ${target.unitCode}` : ''}`,
+            language,
+            daysOverdue: target.daysOverdue,
+          }),
+        });
+        const data = await res.json();
+        if (res.status === 429) {
+          // Mark remaining as pending, show countdown, stop loop
+          for (let j = i; j < ids.length; j++) results.push([ids[j], '⏳ Rate limit — regenerate after countdown']);
+          setRateLimitMs(data.retryAfterMs ?? 60_000);
+          break;
         }
-      })
-    );
+        results.push([leaseId, data.success ? data.message : `Error: ${data.error}`]);
+      } catch {
+        results.push([leaseId, 'Failed to generate']);
+      }
+      setBulkProgress(i + 1);
+    }
 
     setBulkMessages(Object.fromEntries(results));
     setBulkLoading(false);
@@ -349,7 +362,7 @@ export default function RemindersPage() {
           {/* Generate button */}
           <button
             onClick={handleGenerate}
-            disabled={!selectedLeaseId || loading}
+            disabled={!selectedLeaseId || loading || rateLimitMs > 0}
             className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? (
@@ -361,6 +374,9 @@ export default function RemindersPage() {
           </button>
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
+          {rateLimitMs > 0 && (
+            <RateLimitBanner retryAfterMs={rateLimitMs} onReady={() => setRateLimitMs(0)} />
+          )}
 
           {generatedMessage && (
             <div className="space-y-3">
@@ -416,7 +432,7 @@ export default function RemindersPage() {
               </div>
               <button
                 onClick={handleBulkGenerate}
-                disabled={selectedIds.size === 0 || bulkLoading}
+                disabled={selectedIds.size === 0 || bulkLoading || rateLimitMs > 0}
                 className="ml-auto bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 {bulkLoading ? `Generating ${bulkProgress}/${selectedIds.size}...` : `Generate ${selectedIds.size > 0 ? selectedIds.size : ''} Messages`}
