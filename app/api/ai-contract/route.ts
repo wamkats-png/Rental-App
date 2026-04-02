@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@/app/lib/supabase-server';
+import { rateLimit, rateLimitResponse } from '@/app/lib/rateLimit';
 
 const SYSTEM_PROMPT = `You are a Ugandan property rental contract specialist. You help landlords create and extract information from rental/tenancy agreements under Ugandan law.
 
@@ -50,6 +52,21 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Auth
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+    }
+
+    // 5 requests / minute (contract generation is expensive — 8k tokens)
+    const perMin = rateLimit({ identifier: `contract:${user.id}`, max: 5, windowMs: 60_000 });
+    if (!perMin.success) return rateLimitResponse(perMin.retryAfterMs, 'Generating contracts too quickly. Please wait before trying again.');
+
+    // 20 requests / hour
+    const perHour = rateLimit({ identifier: `contract:${user.id}:hr`, max: 20, windowMs: 3_600_000 });
+    if (!perHour.success) return rateLimitResponse(perHour.retryAfterMs, 'Hourly contract limit reached. Your limit resets in 1 hour.');
 
     const body = await req.json();
     const { mode, text, imageBase64 } = body;

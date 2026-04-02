@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@/app/lib/supabase-server';
+import { rateLimit, rateLimitResponse } from '@/app/lib/rateLimit';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -78,6 +80,21 @@ export async function POST(req: NextRequest) {
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json({ error: 'Anthropic API key not configured.' }, { status: 500 });
     }
+
+    // Auth
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+    }
+
+    // 5 requests / minute (Sonnet + 8k tokens per call)
+    const perMin = rateLimit({ identifier: `import:${user.id}`, max: 5, windowMs: 60_000 });
+    if (!perMin.success) return rateLimitResponse(perMin.retryAfterMs, 'Importing too quickly. Please wait before uploading another file.');
+
+    // 15 requests / hour
+    const perHour = rateLimit({ identifier: `import:${user.id}:hr`, max: 15, windowMs: 3_600_000 });
+    if (!perHour.success) return rateLimitResponse(perHour.retryAfterMs, 'Hourly import limit reached. Your limit resets in 1 hour.');
 
     const { text, filename } = await req.json();
     if (!text) {

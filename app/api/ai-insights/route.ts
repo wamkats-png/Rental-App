@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@/app/lib/supabase-server';
+import { rateLimit, rateLimitResponse } from '@/app/lib/rateLimit';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -11,6 +13,21 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Auth
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+    }
+
+    // 10 requests / minute
+    const perMin = rateLimit({ identifier: user.id, max: 10, windowMs: 60_000 });
+    if (!perMin.success) return rateLimitResponse(perMin.retryAfterMs, 'Too many messages. Wait a moment before sending again.');
+
+    // 50 requests / hour (anti-runaway-loop guard)
+    const perHour = rateLimit({ identifier: `${user.id}:hr`, max: 50, windowMs: 3_600_000 });
+    if (!perHour.success) return rateLimitResponse(perHour.retryAfterMs, 'Hourly AI limit reached. Your limit resets in 1 hour.');
 
     const body = await req.json();
     const { messages, financialData } = body;
